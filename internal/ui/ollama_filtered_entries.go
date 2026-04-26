@@ -37,6 +37,11 @@ func (h *handler) showOllamaFilteredPage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	pending, err := h.store.CountEntriesPendingOllamaEnrichment(user.ID)
+	if err != nil {
+		pending = 0
+	}
+
 	view := view.New(h.tpl, r)
 	view.Set("total", count)
 	view.Set("entries", entries)
@@ -45,6 +50,7 @@ func (h *handler) showOllamaFilteredPage(w http.ResponseWriter, r *http.Request)
 	view.Set("user", user)
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+	view.Set("pendingOllamaEnrichment", pending)
 
 	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(user.ID))
 	view.Set("hasSaveEntry", h.store.HasSaveEntry(user.ID))

@@ -548,7 +548,13 @@
     "page.offline.message": "Vous n'êtes pas connecté",
     "page.offline.refresh_page": "Essayez de rafraîchir la page",
     "page.offline.title": "Mode Hors-Ligne",
+    "page.ollama_filtered.enrich.confirm": "Lancer le scoring des prochains articles non analysés ?",
+    "page.ollama_filtered.enrich.label": "Scorer les articles en attente",
     "page.ollama_filtered.help": "Ces articles ont été masqués car leur score prédit est inférieur au seuil configuré. Restaurez ceux qui vous intéressent — ce signal améliorera les futures recommandations.",
+    "page.ollama_filtered.pending": [
+        "%d article est en attente d'analyse.",
+        "%d articles sont en attente d'analyse."
+    ],
     "page.ollama_filtered.title": "Articles filtrés par les recommandations",
     "page.ollama_filtered_entry_count": [
         "%d filtered entry",

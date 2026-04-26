@@ -155,6 +155,57 @@ func (s *Storage) GetOllamaUserProfile(userID int64, limit int) ([]OllamaProfile
 	return samples, nil
 }
 
+// CountEntriesPendingOllamaEnrichment counts the user's entries that still
+// have no Ollama enrichment recorded. Used to label the manual backfill
+// button on the filtered-entries page.
+func (s *Storage) CountEntriesPendingOllamaEnrichment(userID int64) (int, error) {
+	var count int
+	query := `
+		SELECT count(*)
+		FROM entries
+		WHERE user_id = $1
+		  AND ollama_enriched_at IS NULL
+	`
+	if err := s.db.QueryRow(query, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf(`store: unable to count pending ollama entries: %v`, err)
+	}
+	return count, nil
+}
+
+// GetEntriesForOllamaBackfill returns the next batch of entries waiting for
+// Ollama enrichment, newest first so backfilled scores are most relevant for
+// the recent reading flow. Filtered-out entries are deliberately *not*
+// excluded — although they already carry a score, the worker is idempotent
+// and skipping them at the SQL level would complicate the query for no gain.
+func (s *Storage) GetEntriesForOllamaBackfill(userID int64, limit int) (model.Entries, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	query := `
+		SELECT id, user_id, feed_id, title, url, content
+		FROM entries
+		WHERE user_id = $1
+		  AND ollama_enriched_at IS NULL
+		ORDER BY changed_at DESC
+		LIMIT $2
+	`
+	rows, err := s.db.Query(query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf(`store: unable to fetch entries pending ollama enrichment: %v`, err)
+	}
+	defer rows.Close()
+
+	entries := make(model.Entries, 0, limit)
+	for rows.Next() {
+		entry := model.NewEntry()
+		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.FeedID, &entry.Title, &entry.URL, &entry.Content); err != nil {
+			return nil, fmt.Errorf(`store: unable to scan ollama backfill row: %v`, err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
 // GetEntryForOllama returns the minimal data the enrichment worker needs to
 // compute tags and score for a freshly inserted entry.
 func (s *Storage) GetEntryForOllama(entryID int64) (*model.Entry, error) {

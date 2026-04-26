@@ -57,6 +57,64 @@ var (
 	profileCache   sync.Map // map[int64]*cachedProfile
 )
 
+// backfillBatchSize is the maximum number of entries the manual backfill
+// processes per click. Big enough to make a dent on a backlog, small enough
+// that the user can re-click rather than wait for a runaway loop if the
+// model becomes unhappy mid-batch.
+const backfillBatchSize = 200
+
+// backfillRunning tracks per-user manual backfills so a double-click does
+// not spawn two goroutines competing for the same pending entries.
+var backfillRunning sync.Map // map[int64]struct{}
+
+// BackfillUser runs Ollama enrichment for one batch of the user's entries
+// that still lack a score. Intended to be invoked from a goroutine after the
+// UI handler has already responded — failures are logged, never returned.
+func BackfillUser(store *storage.Storage, userID int64) {
+	if !config.Opts.OllamaEnabled() {
+		return
+	}
+	if _, busy := backfillRunning.LoadOrStore(userID, struct{}{}); busy {
+		slog.Info("ollama: backfill skipped, another run is already in progress",
+			slog.Int64("user_id", userID))
+		return
+	}
+	defer backfillRunning.Delete(userID)
+
+	entries, err := store.GetEntriesForOllamaBackfill(userID, backfillBatchSize)
+	if err != nil {
+		slog.Warn("ollama: backfill failed to fetch pending entries",
+			slog.Int64("user_id", userID), slog.Any("error", err))
+		return
+	}
+	if len(entries) == 0 {
+		slog.Info("ollama: backfill found nothing to do", slog.Int64("user_id", userID))
+		return
+	}
+
+	groupsByFeed := make(map[int64]model.Entries)
+	for _, entry := range entries {
+		groupsByFeed[entry.FeedID] = append(groupsByFeed[entry.FeedID], entry)
+	}
+
+	slog.Info("ollama: backfill starting",
+		slog.Int64("user_id", userID),
+		slog.Int("entries", len(entries)),
+		slog.Int("feeds", len(groupsByFeed)))
+
+	for feedID, feedEntries := range groupsByFeed {
+		feed, err := store.FeedByID(userID, feedID)
+		if err != nil || feed == nil {
+			slog.Warn("ollama: backfill skipping feed it cannot load",
+				slog.Int64("user_id", userID),
+				slog.Int64("feed_id", feedID),
+				slog.Any("error", err))
+			continue
+		}
+		EnrichEntries(store, feed, feedEntries)
+	}
+}
+
 // EnrichEntries runs Ollama tag extraction and scoring for the new entries
 // produced by a feed refresh. It is meant to be invoked in its own goroutine.
 // The function is best-effort: any per-entry failure is logged and skipped so

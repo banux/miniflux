@@ -542,7 +542,12 @@
     "page.offline.message": "您已離線",
     "page.offline.refresh_page": "嘗試重新整理頁面",
     "page.offline.title": "離線模式",
+    "page.ollama_filtered.enrich.confirm": "Score the next batch of entries that have not been analyzed yet?",
+    "page.ollama_filtered.enrich.label": "Score pending entries",
     "page.ollama_filtered.help": "These entries were automatically hidden because their predicted score was below the configured threshold. Restore one if you find it relevant — that signal will improve future recommendations.",
+    "page.ollama_filtered.pending": [
+        "%d entry is waiting to be scored."
+    ],
     "page.ollama_filtered.title": "Filtered by recommendations",
     "page.ollama_filtered_entry_count": [
         "%d filtered entries"

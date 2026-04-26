@@ -57,6 +57,7 @@ func Serve(store *storage.Storage, pool *worker.Pool) http.Handler {
 	// Ollama-filtered review page.
 	mux.HandleFunc("GET /ollama/filtered", handler.showOllamaFilteredPage)
 	mux.HandleFunc("POST /ollama/filtered/{entryID}/restore", handler.restoreOllamaFiltered)
+	mux.HandleFunc("POST /ollama/enrich", handler.triggerOllamaBackfill)
 
 	// Search pages.
 	mux.HandleFunc("GET /search", handler.showSearchPage)

@@ -12,6 +12,21 @@
 
 {{ define "content"}}
 <p class="alert alert-info">{{ t "page.ollama_filtered.help" }}</p>
+{{ if gt .pendingOllamaEnrichment 0 }}
+<p class="alert alert-info">
+    {{ plural "page.ollama_filtered.pending" .pendingOllamaEnrichment .pendingOllamaEnrichment }}
+    <button
+        type="button"
+        data-confirm="true"
+        data-url="{{ routePath "/ollama/enrich" }}"
+        data-label-question="{{ t "page.ollama_filtered.enrich.confirm" }}"
+        data-label-yes="{{ t "confirm.yes" }}"
+        data-label-no="{{ t "confirm.no" }}"
+        data-label-loading="{{ t "confirm.loading" }}">
+        {{ icon "refresh" }}<span class="icon-label">{{ t "page.ollama_filtered.enrich.label" }}</span>
+    </button>
+</p>
+{{ end }}
 {{ if not .entries }}
     <p role="alert" class="alert alert-info">{{ t "alert.no_ollama_filtered" }}</p>
 {{ else }}
