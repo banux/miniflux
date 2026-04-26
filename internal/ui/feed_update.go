@@ -50,6 +50,8 @@ func (h *handler) updateFeed(w http.ResponseWriter, r *http.Request) {
 	view.Set("user", loggedUser)
 	view.Set("countUnread", h.store.CountUnreadEntries(loggedUser.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(loggedUser.ID))
+
+	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(loggedUser.ID))
 	view.Set("defaultUserAgent", config.Opts.HTTPClientUserAgent())
 
 	feedModificationRequest := &model.FeedModificationRequest{

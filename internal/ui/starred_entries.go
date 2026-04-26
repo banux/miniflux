@@ -41,6 +41,8 @@ func (h *handler) showStarredPage(w http.ResponseWriter, r *http.Request) {
 	view.Set("user", user)
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+
+	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(user.ID))
 	view.Set("hasSaveEntry", h.store.HasSaveEntry(user.ID))
 
 	response.HTML(w, r, view.Render("starred_entries"))

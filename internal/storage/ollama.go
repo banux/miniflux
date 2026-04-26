@@ -81,6 +81,17 @@ func (s *Storage) CountOllamaFilteredEntries(userID int64) (int, error) {
 	return count, nil
 }
 
+// CountOllamaFiltered is a layout-friendly wrapper around
+// CountOllamaFilteredEntries that swallows the error and returns 0 instead of
+// failing the whole page. Used by the menu counter.
+func (s *Storage) CountOllamaFiltered(userID int64) int {
+	n, err := s.CountOllamaFilteredEntries(userID)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // CountUserRatedEntries returns the number of entries that carry an
 // appreciation signal for the given user (starred or read). It is used as the
 // proxy for "is the recommendation base large enough to start filtering?".

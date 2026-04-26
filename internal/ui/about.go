@@ -31,6 +31,8 @@ func (h *handler) showAboutPage(w http.ResponseWriter, r *http.Request) {
 	view.Set("user", user)
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+
+	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(user.ID))
 	view.Set("globalConfigOptions", config.Opts.ConfigMap(true))
 	view.Set("postgres_version", h.store.DatabaseVersion())
 	view.Set("go_version", runtime.Version())

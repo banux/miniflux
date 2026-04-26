@@ -30,6 +30,8 @@ func (h *handler) saveCategory(w http.ResponseWriter, r *http.Request) {
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
 
+	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(user.ID))
+
 	categoryCreationRequest := &model.CategoryCreationRequest{Title: categoryForm.Title}
 
 	if validationErr := validator.ValidateCategoryCreation(h.store, user.ID, categoryCreationRequest); validationErr != nil {

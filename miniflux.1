@@ -545,6 +545,69 @@ a linked OAuth2 account to sign in\&.
 .br
 Disabled by default\&.
 .TP
+.B OLLAMA_ENABLED
+Set to 1 to enable the Ollama-based entry enrichment worker
+that scores and tags newly fetched articles in the background\&.
+.br
+Requires OLLAMA_MODEL to be set to a non-empty value\&.
+.br
+Disabled by default\&.
+.TP
+.B OLLAMA_URL
+Base URL of the local Ollama daemon\&.
+.br
+Default is http://localhost:11434\&.
+.TP
+.B OLLAMA_MODEL
+Identifier of the Ollama model to use for tag extraction and
+scoring (for example llama3.1:8b)\&.
+.br
+Empty by default, which keeps the integration disabled even
+when OLLAMA_ENABLED=1\&.
+.TP
+.B OLLAMA_TIMEOUT
+Per-request timeout in seconds for calls to the Ollama daemon\&.
+.br
+Default is 60 seconds\&.
+.TP
+.B OLLAMA_MAX_CONCURRENCY
+Maximum number of concurrent Ollama inferences across all feed
+refreshes\&.
+.br
+Used to avoid saturating the local daemon\&.
+.br
+Default is 1\&.
+.TP
+.B OLLAMA_MIN_CONTENT_LENGTH
+Minimum length in characters of the plain-text article body
+required before it is sent to the model\&.
+.br
+When the feed-provided content is shorter, the article URL is
+re-scraped with the regular fetcher so the model has enough
+context to work with\&.
+.br
+Default is 500\&.
+.TP
+.B OLLAMA_FILTER_THRESHOLD
+Score threshold (0\(en100) below which entries are soft-filtered
+out of the regular reading lists\&.
+.br
+Filtered entries remain accessible on the dedicated review page
+and can be restored\&.
+.br
+Set to 0 to disable filtering and only collect tags and scores\&.
+.br
+Default is 0\&.
+.TP
+.B OLLAMA_MIN_TRAINING_SAMPLES
+Minimum number of starred or read entries required before the
+score-based filter is allowed to start hiding new articles\&.
+.br
+Until this many appreciation samples are collected per user,
+filtering stays disabled regardless of the threshold\&.
+.br
+Default is 50\&.
+.TP
 .B POLLING_FREQUENCY
 Interval for the background job scheduler.
 .br

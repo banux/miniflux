@@ -65,6 +65,12 @@ func EnrichEntries(store *storage.Storage, feed *model.Feed, entries model.Entri
 	if !config.Opts.OllamaEnabled() || len(entries) == 0 {
 		return
 	}
+	if feed.DisableOllama {
+		slog.Debug("ollama: enrichment disabled for this feed",
+			slog.Int64("feed_id", feed.ID),
+			slog.Int64("user_id", feed.UserID))
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), config.Opts.OllamaTimeout()*time.Duration(len(entries)+1))
 	defer cancel()
@@ -89,14 +95,38 @@ func EnrichEntries(store *storage.Storage, feed *model.Feed, entries model.Entri
 		enoughSamples = ratedCount >= minSamples
 	}
 
+	stats := batchStats{}
+	batchStart := time.Now()
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			slog.Warn("ollama: context expired before all entries were enriched",
-				slog.Int64("user_id", feed.UserID), slog.Int("remaining", len(entries)))
-			return
+				slog.Int64("user_id", feed.UserID),
+				slog.Int64("feed_id", feed.ID),
+				slog.Int("remaining", len(entries)-stats.processed))
+			break
 		}
-		enrichOne(ctx, client, store, feed, entry, profile, filterEnabled && enoughSamples, threshold)
+		enrichOne(ctx, client, store, feed, entry, profile, filterEnabled && enoughSamples, threshold, &stats)
 	}
+
+	slog.Info("ollama: batch enrichment done",
+		slog.Int64("user_id", feed.UserID),
+		slog.Int64("feed_id", feed.ID),
+		slog.Int("entries", len(entries)),
+		slog.Int("processed", stats.processed),
+		slog.Int("tag_errors", stats.tagErrors),
+		slog.Int("score_errors", stats.scoreErrors),
+		slog.Int("filtered", stats.filtered),
+		slog.Duration("duration", time.Since(batchStart)))
+}
+
+// batchStats captures aggregate counters for one EnrichEntries invocation.
+// Kept as a small struct so we never drop a counter update by forgetting to
+// thread it through a return value.
+type batchStats struct {
+	processed   int
+	tagErrors   int
+	scoreErrors int
+	filtered    int
 }
 
 func enrichOne(
@@ -108,18 +138,22 @@ func enrichOne(
 	profile []ProfileSample,
 	filter bool,
 	threshold float64,
+	stats *batchStats,
 ) {
 	if !acquireSlot(ctx) {
 		return
 	}
 	defer releaseSlot()
+	stats.processed++
 
 	plain := sanitizer.StripTags(entry.Content)
 	plain = strings.TrimSpace(plain)
+	rescraped := false
 
 	if len(plain) < config.Opts.OllamaMinContentLength() {
 		if scraped := scrapeForOllama(feed, entry.URL); scraped != "" {
 			plain = scraped
+			rescraped = true
 		}
 	}
 
@@ -127,16 +161,31 @@ func enrichOne(
 		slog.Int64("user_id", entry.UserID),
 		slog.Int64("entry_id", entry.ID),
 		slog.String("entry_url", entry.URL),
+		slog.Bool("rescraped", rescraped),
 	)
 
+	tagsStart := time.Now()
 	tags, err := client.ExtractTags(ctx, entry.Title, entry.URL, plain)
+	tagsDuration := time.Since(tagsStart)
 	if err != nil {
-		logger.Warn("ollama: tag extraction failed", slog.Any("error", err))
+		stats.tagErrors++
+		logger.Warn("ollama: tag extraction failed",
+			slog.Any("error", err),
+			slog.Duration("duration", tagsDuration))
+	} else {
+		logger.Debug("ollama: tags extracted",
+			slog.Int("tag_count", len(tags)),
+			slog.Duration("duration", tagsDuration))
 	}
 
+	scoreStart := time.Now()
 	score, err := client.ScoreEntry(ctx, profile, entry.Title, entry.URL, tags, plain)
+	scoreDuration := time.Since(scoreStart)
 	if err != nil {
-		logger.Warn("ollama: scoring failed", slog.Any("error", err))
+		stats.scoreErrors++
+		logger.Warn("ollama: scoring failed",
+			slog.Any("error", err),
+			slog.Duration("duration", scoreDuration))
 		// Persist tags alone if we got them; otherwise nothing to do.
 		if len(tags) > 0 {
 			if err := store.UpdateEntryOllamaEnrichment(entry.ID, 0, tags); err != nil {
@@ -146,12 +195,17 @@ func enrichOne(
 		return
 	}
 
+	logger.Debug("ollama: entry scored",
+		slog.Float64("score", score),
+		slog.Duration("duration", scoreDuration))
+
 	if err := store.UpdateEntryOllamaEnrichment(entry.ID, score, tags); err != nil {
 		logger.Warn("ollama: unable to persist enrichment", slog.Any("error", err))
 		return
 	}
 
 	if filter && score < threshold {
+		stats.filtered++
 		logger.Info("ollama: filtering entry below threshold",
 			slog.Float64("score", score), slog.Float64("threshold", threshold))
 		if err := store.MarkEntryAsFiltered(entry.ID); err != nil {

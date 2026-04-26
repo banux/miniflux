@@ -25,7 +25,7 @@ Objectif : ajouter à chaque article un **score** (basé sur les appréciations 
   - [x] `OLLAMA_FILTER_THRESHOLD` (int 0–100, défaut 0 = pas de filtre)
   - [x] `OLLAMA_MIN_TRAINING_SAMPLES` (int, défaut 50)
 - [x] Accesseurs correspondants.
-- [ ] Documenter les variables d'env dans le man `miniflux.1`.
+- [x] Documenter les variables d'env dans le man `miniflux.1`.
 
 ### Modèle & stockage
 - [x] `internal/model/entry.go` : ajouter `OllamaScore *float64`, `OllamaTags []string`, `OllamaEnrichedAt *time.Time`.
@@ -58,16 +58,16 @@ Objectif : ajouter à chaque article un **score** (basé sur les appréciations 
 - [x] Tests unitaires sur `normalizeTags`, `extractJSON`, `truncate`, `clamp01`.
 - [x] Tests d'intégration légers contre un `httptest.Server` simulant Ollama (tags, score, profil vide).
 
-## Phase 2 — Robustesse / observabilité
-- [ ] Logs structurés : durée d'inférence, taux d'erreur Ollama.
-- [ ] Backoff/retry sur erreur Ollama (1 retry, sinon on laisse l'entrée non enrichie, pas bloquante).
-- [ ] Tests unitaires : parsing des réponses Ollama, prompt builders, sélection contenu vs re-fetch.
-- [ ] Test d'intégration léger avec un faux serveur HTTP simulant Ollama.
+## Phase 2 — Robustesse / observabilité ✅
+- [x] Logs structurés : durée d'inférence par entrée (tags + score), récap par batch (count, erreurs, durée), `rescraped` flag pour tracer le re-fetch.
+- [x] Backoff/retry sur erreur Ollama (1 retry sur erreurs réseau / 5xx, pas de retry sur 4xx, abandon propre si le contexte est annulé pendant le backoff).
+- [x] Tests unitaires : parsing des réponses Ollama, prompt builders (profil + excerpt + troncature), retry/abandon, respect du contexte annulé.
+- [x] Test d'intégration léger avec un faux serveur HTTP simulant Ollama (déjà couvert via `httptest.Server`).
 
-## Phase 3 — UI (futur, hors scope v1)
-- [ ] Afficher le score dans la liste d'articles (badge).
-- [ ] Toggle par feed dans les settings.
-- [ ] Page d'admin pour voir le nombre d'articles filtrés.
+## Phase 3 — UI ✅
+- [x] Afficher le score dans la liste d'articles (badge "AI 42%" dans `item_meta`, visible uniquement si `ollamaEnabled` et l'entrée est scorée).
+- [x] Toggle par feed dans les settings (`disable_ollama` sur `feeds`, checkbox dans `edit_feed`, court-circuit dans `EnrichEntries`).
+- [x] Compteur d'articles filtrés à côté du lien menu (« Filtered (N) »), via `CountOllamaFiltered` propagé par tous les handlers UI.
 
 ## Risques / points de vigilance
 - Latence Ollama : un modèle 7B+ peut prendre 5–30 s par article. Avec 100 articles d'un refresh, ça empile. Le sémaphore + l'asynchronisme couvrent, mais il faudra surveiller.
@@ -100,7 +100,8 @@ Objectif : ajouter à chaque article un **score** (basé sur les appréciations 
 - [x] TODO.md rédigé.
 - [x] **Phase 1 terminée** : compile, `go vet` clean, tous les tests passent.
 - [x] **Phase 1bis terminée** : page de revue + restauration en place.
-- [ ] Reste à faire : doc man, Phase 2 (robustesse), Phase 3 (UI plus riche : score sur chaque entrée, toggle par feed).
+- [x] **Phase 2 terminée** : retry/backoff, logs structurés, tests prompt/retry/contexte.
+- [x] **Phase 3 terminée** : badge score dans les listes, toggle par feed, compteur d'articles filtrés dans le menu.
 
 ## Comment activer en local
 ```sh

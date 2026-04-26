@@ -67,6 +67,7 @@ func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 		AppriseServiceURLs:          feed.AppriseServiceURLs,
 		WebhookURL:                  feed.WebhookURL,
 		DisableHTTP2:                feed.DisableHTTP2,
+		DisableOllama:               feed.DisableOllama,
 		NtfyEnabled:                 feed.NtfyEnabled,
 		NtfyPriority:                feed.NtfyPriority,
 		NtfyTopic:                   feed.NtfyTopic,
@@ -83,6 +84,8 @@ func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 	view.Set("user", user)
 	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
 	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+
+	view.Set("countOllamaFiltered", h.store.CountOllamaFiltered(user.ID))
 	view.Set("defaultUserAgent", config.Opts.HTTPClientUserAgent())
 	view.Set("hasProxyConfigured", config.Opts.HasHTTPClientProxyURLConfigured())
 

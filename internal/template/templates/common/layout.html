@@ -88,7 +88,11 @@
                 </li>
                 {{ if ollamaEnabled }}
                 <li {{ if eq .menu "ollama_filtered" }}class="active"{{ end }}>
-                    <a href="{{ routePath "/ollama/filtered" }}" data-page="ollama_filtered">{{ icon "delete" }}{{ t "menu.ollama_filtered" }}</a>
+                    <a href="{{ routePath "/ollama/filtered" }}" data-page="ollama_filtered">{{ icon "delete" }}{{ t "menu.ollama_filtered" }}
+                      {{ if gt .countOllamaFiltered 0 }}
+                          <span class="error-feeds-counter-wrapper">(<span class="error-feeds-counter">{{ .countOllamaFiltered }}</span>)</span>
+                      {{ end }}
+                    </a>
                 </li>
                 {{ end }}
                 <li {{ if eq .menu "feeds" }}class="active"{{ end }} title="{{ t "tooltip.keyboard_shortcuts" "g f" }}">

@@ -40,6 +40,7 @@ type FeedForm struct {
 	AppriseServiceURLs          string
 	WebhookURL                  string
 	DisableHTTP2                bool
+	DisableOllama               bool
 	NtfyEnabled                 bool
 	NtfyPriority                int
 	NtfyTopic                   string
@@ -79,6 +80,7 @@ func (f FeedForm) Merge(feed *model.Feed) *model.Feed {
 	feed.AppriseServiceURLs = f.AppriseServiceURLs
 	feed.WebhookURL = f.WebhookURL
 	feed.DisableHTTP2 = f.DisableHTTP2
+	feed.DisableOllama = f.DisableOllama
 	feed.NtfyEnabled = f.NtfyEnabled
 	feed.NtfyPriority = f.NtfyPriority
 	feed.NtfyTopic = f.NtfyTopic
@@ -133,6 +135,7 @@ func NewFeedForm(r *http.Request) *FeedForm {
 		AppriseServiceURLs:          r.FormValue("apprise_service_urls"),
 		WebhookURL:                  r.FormValue("webhook_url"),
 		DisableHTTP2:                r.FormValue("disable_http2") == "1",
+		DisableOllama:               r.FormValue("disable_ollama") == "1",
 		NtfyEnabled:                 r.FormValue("ntfy_enabled") == "1",
 		NtfyPriority:                ntfyPriority,
 		NtfyTopic:                   r.FormValue("ntfy_topic"),

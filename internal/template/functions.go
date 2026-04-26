@@ -108,6 +108,12 @@ func (f *funcMap) Map() template.FuncMap {
 			}
 			return *f
 		},
+		"ollamaScorePercent": func(f *float64) string {
+			if f == nil {
+				return ""
+			}
+			return fmt.Sprintf("%d%%", int(math.Round(*f*100)))
+		},
 		"deRefTime": func(t *time.Time) time.Time {
 			if t == nil {
 				return time.Time{}

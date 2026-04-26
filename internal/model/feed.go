@@ -52,6 +52,7 @@ type Feed struct {
 	FetchViaProxy               bool      `json:"fetch_via_proxy"`
 	HideGlobally                bool      `json:"hide_globally"`
 	DisableHTTP2                bool      `json:"disable_http2"`
+	DisableOllama               bool      `json:"disable_ollama"`
 	PushoverEnabled             bool      `json:"pushover_enabled"`
 	NtfyEnabled                 bool      `json:"ntfy_enabled"`
 	Crawler                     bool      `json:"crawler"`
@@ -165,6 +166,7 @@ type FeedCreationRequest struct {
 	FetchViaProxy               bool   `json:"fetch_via_proxy"`
 	HideGlobally                bool   `json:"hide_globally"`
 	DisableHTTP2                bool   `json:"disable_http2"`
+	DisableOllama               bool   `json:"disable_ollama"`
 	ScraperRules                string `json:"scraper_rules"`
 	RewriteRules                string `json:"rewrite_rules"`
 	BlocklistRules              string `json:"blocklist_rules"`
@@ -210,6 +212,7 @@ type FeedModificationRequest struct {
 	FetchViaProxy               *bool   `json:"fetch_via_proxy"`
 	HideGlobally                *bool   `json:"hide_globally"`
 	DisableHTTP2                *bool   `json:"disable_http2"`
+	DisableOllama               *bool   `json:"disable_ollama"`
 	ProxyURL                    *string `json:"proxy_url"`
 }
 
@@ -313,6 +316,10 @@ func (f *FeedModificationRequest) Patch(feed *Feed) {
 
 	if f.DisableHTTP2 != nil {
 		feed.DisableHTTP2 = *f.DisableHTTP2
+	}
+
+	if f.DisableOllama != nil {
+		feed.DisableOllama = *f.DisableOllama
 	}
 
 	if f.ProxyURL != nil {

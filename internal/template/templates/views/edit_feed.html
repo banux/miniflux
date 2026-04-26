@@ -72,6 +72,9 @@
 
             <label><input type="checkbox" name="no_media_player" {{ if .form.NoMediaPlayer }}checked{{ end }} value="1" >  {{ t "form.feed.label.no_media_player" }} </label>
             <label><input type="checkbox" name="disabled" value="1" {{ if .form.Disabled }}checked{{ end }}> {{ t "form.feed.label.disabled" }}</label>
+            {{ if ollamaEnabled }}
+            <label><input type="checkbox" name="disable_ollama" value="1" {{ if .form.DisableOllama }}checked{{ end }}> {{ t "form.feed.label.disable_ollama" }}</label>
+            {{ end }}
 
             <div class="buttons">
                 <button type="submit" class="button button-primary" data-label-loading="{{ t "form.submit.saving" }}">{{ t "action.update" }}</button>

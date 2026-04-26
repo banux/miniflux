@@ -12,6 +12,11 @@
             <span>{{ plural "entry.estimated_reading_time" .entry.ReadingTime .entry.ReadingTime }}</span>
         </li>
         {{ end -}}
+        {{ if and ollamaEnabled .entry.OllamaScore -}}
+        <li class="item-meta-info-ollama-score">
+            <span title="{{ t "entry.ollama_score" }}: {{ printf "%.2f" (deRefFloat .entry.OllamaScore) }}" aria-label="{{ t "entry.ollama_score" }}: {{ ollamaScorePercent .entry.OllamaScore }}">{{ t "entry.ollama_score_short" }} {{ ollamaScorePercent .entry.OllamaScore }}</span>
+        </li>
+        {{ end -}}
     </ul>
     <ul class="item-meta-icons">
         <li class="item-meta-icons-read">
