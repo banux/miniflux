@@ -11,6 +11,7 @@ import (
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/integration"
+	"miniflux.app/v2/internal/integration/ollama"
 	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/model"
 	"miniflux.app/v2/internal/proxyrotator"
@@ -347,6 +348,10 @@ func RefreshFeed(store *storage.Storage, userID, feedID int64, forceRefresh bool
 			)
 		} else if userIntegrations != nil && len(newEntries) > 0 {
 			go integration.PushEntries(originalFeed, newEntries, userIntegrations)
+		}
+
+		if len(newEntries) > 0 && config.Opts.OllamaEnabled() {
+			go ollama.EnrichEntries(store, originalFeed, newEntries)
 		}
 
 		originalFeed.EtagHeader = responseHandler.ETag()

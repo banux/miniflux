@@ -1496,4 +1496,24 @@ var migrations = [...]func(tx *sql.Tx) error{
 		`)
 		return err
 	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			ALTER TABLE entries
+				ADD COLUMN ollama_score real,
+				ADD COLUMN ollama_tags text[] default '{}',
+				ADD COLUMN ollama_enriched_at timestamp with time zone;
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			ALTER TABLE entries
+				ADD COLUMN ollama_filtered_at timestamp with time zone;
+
+			CREATE INDEX entries_ollama_filtered_at_idx
+				ON entries (user_id, ollama_filtered_at DESC)
+				WHERE ollama_filtered_at IS NOT NULL;
+		`)
+		return err
+	},
 }

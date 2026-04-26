@@ -57,6 +57,7 @@ func (e *Engine) ParseTemplates() {
 		"integrations.html":        {"layout.html", "settings_menu.html"},
 		"login.html":               {"layout.html"},
 		"offline.html":             {},
+		"ollama_filtered_entries.html": {"item_meta.html", "layout.html", "pagination.html"},
 		"search.html":              {"item_meta.html", "layout.html", "pagination.html"},
 		"sessions.html":            {"layout.html", "settings_menu.html"},
 		"settings.html":            {"layout.html", "settings_menu.html"},

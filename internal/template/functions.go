@@ -50,6 +50,7 @@ func (f *funcMap) Map() template.FuncMap {
 		"hasAuthProxy": func() bool {
 			return config.Opts.AuthProxyHeader() != ""
 		},
+		"ollamaEnabled": config.Opts.OllamaEnabled,
 		"routePath": func(format string, args ...any) string {
 			if len(args) > 0 {
 				return f.basePath + fmt.Sprintf(format, args...)
@@ -101,6 +102,18 @@ func (f *funcMap) Map() template.FuncMap {
 			return crypto.GenerateRandomStringHex(16)
 		},
 		"deRef":     func(i *int) int { return *i },
+		"deRefFloat": func(f *float64) float64 {
+			if f == nil {
+				return 0
+			}
+			return *f
+		},
+		"deRefTime": func(t *time.Time) time.Time {
+			if t == nil {
+				return time.Time{}
+			}
+			return *t
+		},
 		"duration":  duration,
 		"urlEncode": url.PathEscape,
 		"subtract": func(a, b int) int {

@@ -26,6 +26,26 @@ type EntryQueryBuilder struct {
 	offset          int
 	fetchEnclosures bool
 	excludeContent  bool
+	// ollamaFilterMode controls the visibility of entries that the Ollama
+	// scorer marked as filtered:
+	//   0 (default) = hide filtered entries
+	//   1           = only return filtered entries
+	//   2           = include filtered entries alongside the rest
+	ollamaFilterMode int
+}
+
+// OnlyOllamaFiltered returns only entries that have been auto-filtered by the
+// Ollama scorer. Used by the dedicated review page.
+func (e *EntryQueryBuilder) OnlyOllamaFiltered() *EntryQueryBuilder {
+	e.ollamaFilterMode = 1
+	return e
+}
+
+// IncludeOllamaFiltered keeps Ollama-filtered entries in the result set
+// (otherwise they are hidden by default).
+func (e *EntryQueryBuilder) IncludeOllamaFiltered() *EntryQueryBuilder {
+	e.ollamaFilterMode = 2
+	return e
 }
 
 // WithEnclosures fetches enclosures for each entry.
@@ -314,6 +334,10 @@ func (e *EntryQueryBuilder) fetchEntries(withCount bool) (model.Entries, int, er
 			e.created_at,
 			e.changed_at,
 			e.tags,
+			e.ollama_score,
+			e.ollama_tags,
+			e.ollama_enriched_at,
+			e.ollama_filtered_at,
 			f.title as feed_title,
 			f.feed_url,
 			f.site_url,
@@ -362,6 +386,9 @@ func (e *EntryQueryBuilder) fetchEntries(withCount bool) (model.Entries, int, er
 		var iconID sql.NullInt64
 		var externalIconID sql.NullString
 		var tz string
+		var ollamaScore sql.NullFloat64
+		var ollamaEnrichedAt sql.NullTime
+		var ollamaFilteredAt sql.NullTime
 
 		entry := model.NewEntry()
 
@@ -383,6 +410,10 @@ func (e *EntryQueryBuilder) fetchEntries(withCount bool) (model.Entries, int, er
 			&entry.CreatedAt,
 			&entry.ChangedAt,
 			pq.Array(&entry.Tags),
+			&ollamaScore,
+			pq.Array(&entry.OllamaTags),
+			&ollamaEnrichedAt,
+			&ollamaFilteredAt,
 			&entry.Feed.Title,
 			&entry.Feed.FeedURL,
 			&entry.Feed.SiteURL,
@@ -427,6 +458,19 @@ func (e *EntryQueryBuilder) fetchEntries(withCount bool) (model.Entries, int, er
 		entry.CreatedAt = timezone.Convert(tz, entry.CreatedAt)
 		entry.ChangedAt = timezone.Convert(tz, entry.ChangedAt)
 		entry.Feed.CheckedAt = timezone.Convert(tz, entry.Feed.CheckedAt)
+
+		if ollamaScore.Valid {
+			score := ollamaScore.Float64
+			entry.OllamaScore = &score
+		}
+		if ollamaEnrichedAt.Valid {
+			t := timezone.Convert(tz, ollamaEnrichedAt.Time)
+			entry.OllamaEnrichedAt = &t
+		}
+		if ollamaFilteredAt.Valid {
+			t := timezone.Convert(tz, ollamaFilteredAt.Time)
+			entry.OllamaFilteredAt = &t
+		}
 
 		entry.Feed.ID = entry.FeedID
 		entry.Feed.UserID = entry.UserID
@@ -496,7 +540,16 @@ func (e *EntryQueryBuilder) contentColumn() string {
 }
 
 func (e *EntryQueryBuilder) buildCondition() string {
-	return strings.Join(e.conditions, " AND ")
+	conditions := e.conditions
+	switch e.ollamaFilterMode {
+	case 1:
+		conditions = append(conditions, "e.ollama_filtered_at IS NOT NULL")
+	case 2:
+		// no-op: include both filtered and non-filtered entries.
+	default:
+		conditions = append(conditions, "e.ollama_filtered_at IS NULL")
+	}
+	return strings.Join(conditions, " AND ")
 }
 
 func (e *EntryQueryBuilder) buildSorting() string {

@@ -86,6 +86,11 @@
                 <li {{ if eq .menu "history" }}class="active"{{ end }} title="{{ t "tooltip.keyboard_shortcuts" "g h" }}">
                     <a href="{{ routePath "/history" }}" data-page="history">{{ icon "history" }}{{ t "menu.history" }}</a>
                 </li>
+                {{ if ollamaEnabled }}
+                <li {{ if eq .menu "ollama_filtered" }}class="active"{{ end }}>
+                    <a href="{{ routePath "/ollama/filtered" }}" data-page="ollama_filtered">{{ icon "delete" }}{{ t "menu.ollama_filtered" }}</a>
+                </li>
+                {{ end }}
                 <li {{ if eq .menu "feeds" }}class="active"{{ end }} title="{{ t "tooltip.keyboard_shortcuts" "g f" }}">
                     <a href="{{ routePath "/feeds" }}" data-page="feeds">{{ icon "feeds" }}{{ t "menu.feeds" }}
                       {{ if gt .countErrorFeeds 0 }}

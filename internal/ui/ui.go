@@ -54,6 +54,10 @@ func Serve(store *storage.Storage, pool *worker.Pool) http.Handler {
 	mux.HandleFunc("GET /starred", handler.showStarredPage)
 	mux.HandleFunc("GET /starred/entry/{entryID}", handler.showStarredEntryPage)
 
+	// Ollama-filtered review page.
+	mux.HandleFunc("GET /ollama/filtered", handler.showOllamaFilteredPage)
+	mux.HandleFunc("POST /ollama/filtered/{entryID}/restore", handler.restoreOllamaFiltered)
+
 	// Search pages.
 	mux.HandleFunc("GET /search", handler.showSearchPage)
 	mux.HandleFunc("GET /search/entry/{entryID}", handler.showSearchEntryPage)

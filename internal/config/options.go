@@ -479,6 +479,61 @@ func NewConfigOptions() *configOptions {
 				rawValue:        "0",
 				valueType:       boolType,
 			},
+			"OLLAMA_ENABLED": {
+				parsedBoolValue: false,
+				rawValue:        "0",
+				valueType:       boolType,
+			},
+			"OLLAMA_URL": {
+				parsedStringValue: "http://localhost:11434",
+				rawValue:          "http://localhost:11434",
+				valueType:         stringType,
+			},
+			"OLLAMA_MODEL": {
+				parsedStringValue: "",
+				rawValue:          "",
+				valueType:         stringType,
+			},
+			"OLLAMA_TIMEOUT": {
+				parsedDuration: 60 * time.Second,
+				rawValue:       "60",
+				valueType:      secondType,
+				validator: func(rawValue string) error {
+					return validateGreaterOrEqualThan(rawValue, 1)
+				},
+			},
+			"OLLAMA_MAX_CONCURRENCY": {
+				parsedIntValue: 1,
+				rawValue:       "1",
+				valueType:      intType,
+				validator: func(rawValue string) error {
+					return validateGreaterOrEqualThan(rawValue, 1)
+				},
+			},
+			"OLLAMA_MIN_CONTENT_LENGTH": {
+				parsedIntValue: 500,
+				rawValue:       "500",
+				valueType:      intType,
+				validator: func(rawValue string) error {
+					return validateGreaterOrEqualThan(rawValue, 0)
+				},
+			},
+			"OLLAMA_FILTER_THRESHOLD": {
+				parsedIntValue: 0,
+				rawValue:       "0",
+				valueType:      intType,
+				validator: func(rawValue string) error {
+					return validateRange(rawValue, 0, 100)
+				},
+			},
+			"OLLAMA_MIN_TRAINING_SAMPLES": {
+				parsedIntValue: 50,
+				rawValue:       "50",
+				valueType:      intType,
+				validator: func(rawValue string) error {
+					return validateGreaterOrEqualThan(rawValue, 1)
+				},
+			},
 			"POLLING_FREQUENCY": {
 				parsedDuration: 60 * time.Minute,
 				rawValue:       "60",
@@ -916,6 +971,40 @@ func (c *configOptions) OAuth2RedirectURL() string {
 
 func (c *configOptions) OAuth2UserCreation() bool {
 	return c.options["OAUTH2_USER_CREATION"].parsedBoolValue
+}
+
+func (c *configOptions) OllamaEnabled() bool {
+	return c.options["OLLAMA_ENABLED"].parsedBoolValue &&
+		c.options["OLLAMA_URL"].parsedStringValue != "" &&
+		c.options["OLLAMA_MODEL"].parsedStringValue != ""
+}
+
+func (c *configOptions) OllamaURL() string {
+	return c.options["OLLAMA_URL"].parsedStringValue
+}
+
+func (c *configOptions) OllamaModel() string {
+	return c.options["OLLAMA_MODEL"].parsedStringValue
+}
+
+func (c *configOptions) OllamaTimeout() time.Duration {
+	return c.options["OLLAMA_TIMEOUT"].parsedDuration
+}
+
+func (c *configOptions) OllamaMaxConcurrency() int {
+	return c.options["OLLAMA_MAX_CONCURRENCY"].parsedIntValue
+}
+
+func (c *configOptions) OllamaMinContentLength() int {
+	return c.options["OLLAMA_MIN_CONTENT_LENGTH"].parsedIntValue
+}
+
+func (c *configOptions) OllamaFilterThreshold() int {
+	return c.options["OLLAMA_FILTER_THRESHOLD"].parsedIntValue
+}
+
+func (c *configOptions) OllamaMinTrainingSamples() int {
+	return c.options["OLLAMA_MIN_TRAINING_SAMPLES"].parsedIntValue
 }
 
 func (c *configOptions) PollingFrequency() time.Duration {

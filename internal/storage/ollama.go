@@ -1,0 +1,168 @@
+// SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package storage // import "miniflux.app/v2/internal/storage"
+
+import (
+	"fmt"
+
+	"miniflux.app/v2/internal/model"
+
+	"github.com/lib/pq"
+)
+
+// UpdateEntryOllamaEnrichment writes the score and tags computed by the Ollama
+// agent for a single entry. It also stamps ollama_enriched_at with now().
+func (s *Storage) UpdateEntryOllamaEnrichment(entryID int64, score float64, tags []string) error {
+	query := `
+		UPDATE entries
+		SET ollama_score = $1,
+			ollama_tags = $2,
+			ollama_enriched_at = now()
+		WHERE id = $3
+	`
+	if _, err := s.db.Exec(query, score, pq.Array(tags), entryID); err != nil {
+		return fmt.Errorf(`store: unable to update ollama enrichment for entry #%d: %v`, entryID, err)
+	}
+	return nil
+}
+
+// MarkEntryAsFiltered flags an entry that the Ollama scorer rated below the
+// configured threshold. The entry is kept in the database so users can review
+// the filtering decisions, but it is forced to "read" so it does not pollute
+// unread lists. The default entry queries hide ollama_filtered_at IS NOT NULL
+// rows, so filtered entries only surface on the dedicated review page.
+func (s *Storage) MarkEntryAsFiltered(entryID int64) error {
+	query := `
+		UPDATE entries
+		SET ollama_filtered_at = now(),
+		    status = 'read',
+		    changed_at = now()
+		WHERE id = $1
+		  AND ollama_filtered_at IS NULL
+	`
+	if _, err := s.db.Exec(query, entryID); err != nil {
+		return fmt.Errorf(`store: unable to mark entry #%d as filtered: %v`, entryID, err)
+	}
+	return nil
+}
+
+// RestoreFilteredEntry clears the Ollama filter flag on an entry, putting it
+// back to unread so the user can read or star it. Scoped to the user to
+// prevent IDOR.
+func (s *Storage) RestoreFilteredEntry(userID, entryID int64) error {
+	query := `
+		UPDATE entries
+		SET ollama_filtered_at = NULL,
+		    status = 'unread',
+		    changed_at = now()
+		WHERE id = $1
+		  AND user_id = $2
+		  AND ollama_filtered_at IS NOT NULL
+	`
+	if _, err := s.db.Exec(query, entryID, userID); err != nil {
+		return fmt.Errorf(`store: unable to restore filtered entry #%d: %v`, entryID, err)
+	}
+	return nil
+}
+
+// CountOllamaFilteredEntries returns the number of entries currently filtered
+// out by the Ollama scorer for the given user.
+func (s *Storage) CountOllamaFilteredEntries(userID int64) (int, error) {
+	var count int
+	query := `
+		SELECT count(*)
+		FROM entries
+		WHERE user_id = $1 AND ollama_filtered_at IS NOT NULL
+	`
+	if err := s.db.QueryRow(query, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf(`store: unable to count filtered entries: %v`, err)
+	}
+	return count, nil
+}
+
+// CountUserRatedEntries returns the number of entries that carry an
+// appreciation signal for the given user (starred or read). It is used as the
+// proxy for "is the recommendation base large enough to start filtering?".
+func (s *Storage) CountUserRatedEntries(userID int64) (int, error) {
+	var count int
+	query := `
+		SELECT count(*)
+		FROM entries
+		WHERE user_id = $1
+		  AND (starred = true OR status = 'read')
+	`
+	if err := s.db.QueryRow(query, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf(`store: unable to count rated entries: %v`, err)
+	}
+	return count, nil
+}
+
+// OllamaProfileSample is the compact representation of a past entry used to
+// build the user's preference profile sent to the Ollama scorer.
+type OllamaProfileSample struct {
+	Title   string
+	Tags    []string
+	Starred bool
+	Read    bool
+}
+
+// GetOllamaUserProfile returns up to limit recent entries the user has reacted
+// to (starred or read), most recent first, projected to title + ollama_tags.
+// Tags fall back to the feed-provided tags when the entry has not been
+// enriched yet.
+func (s *Storage) GetOllamaUserProfile(userID int64, limit int) ([]OllamaProfileSample, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	query := `
+		SELECT
+			title,
+			COALESCE(NULLIF(ollama_tags, '{}'), tags) AS effective_tags,
+			starred,
+			status = 'read' AS is_read
+		FROM entries
+		WHERE user_id = $1
+		  AND (starred = true OR status = 'read')
+		ORDER BY changed_at DESC
+		LIMIT $2
+	`
+	rows, err := s.db.Query(query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf(`store: unable to fetch ollama profile samples: %v`, err)
+	}
+	defer rows.Close()
+
+	samples := make([]OllamaProfileSample, 0, limit)
+	for rows.Next() {
+		var sample OllamaProfileSample
+		if err := rows.Scan(&sample.Title, pq.Array(&sample.Tags), &sample.Starred, &sample.Read); err != nil {
+			return nil, fmt.Errorf(`store: unable to scan ollama profile sample: %v`, err)
+		}
+		samples = append(samples, sample)
+	}
+	return samples, nil
+}
+
+// GetEntryForOllama returns the minimal data the enrichment worker needs to
+// compute tags and score for a freshly inserted entry.
+func (s *Storage) GetEntryForOllama(entryID int64) (*model.Entry, error) {
+	entry := model.NewEntry()
+	query := `
+		SELECT id, user_id, feed_id, title, url, content
+		FROM entries
+		WHERE id = $1
+	`
+	err := s.db.QueryRow(query, entryID).Scan(
+		&entry.ID,
+		&entry.UserID,
+		&entry.FeedID,
+		&entry.Title,
+		&entry.URL,
+		&entry.Content,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(`store: unable to fetch entry #%d for ollama: %v`, entryID, err)
+	}
+	return entry, nil
+}
