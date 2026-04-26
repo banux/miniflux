@@ -1523,4 +1523,13 @@ var migrations = [...]func(tx *sql.Tx) error{
 		`)
 		return err
 	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			ALTER TABLE entries
+				ADD COLUMN ollama_feedback smallint NOT NULL DEFAULT 0,
+				ADD CONSTRAINT entries_ollama_feedback_check
+					CHECK (ollama_feedback IN (-1, 0, 1));
+		`)
+		return err
+	},
 }

@@ -76,6 +76,34 @@
                         data-value="{{ if .entry.Starred }}star{{ else }}unstar{{ end }}"
                         >{{ if .entry.Starred }}{{ icon "unstar" }}{{ else }}{{ icon "star" }}{{ end }}<span class="icon-label">{{ if .entry.Starred }}{{ t "entry.starred.toggle.off" }}{{ else }}{{ t "entry.starred.toggle.on" }}{{ end }}</span></button>
                 </li>
+                {{ if ollamaEnabled }}
+                <li>
+                    <button
+                        class="page-button {{ if eq .entry.OllamaFeedback 1 }}active{{ end }}"
+                        title="{{ t "entry.ollama_feedback.up.title" }}"
+                        data-confirm="true"
+                        data-url="{{ routePath "/entry/%d/ollama-feedback/up" .entry.ID }}"
+                        data-label-question="{{ if eq .entry.OllamaFeedback 1 }}{{ t "entry.ollama_feedback.up.clear.confirm" }}{{ else }}{{ t "entry.ollama_feedback.up.confirm" }}{{ end }}"
+                        data-label-yes="{{ t "confirm.yes" }}"
+                        data-label-no="{{ t "confirm.no" }}"
+                        data-label-loading="{{ t "confirm.loading" }}">
+                        {{ icon "star" }}<span class="icon-label">{{ if eq .entry.OllamaFeedback 1 }}{{ t "entry.ollama_feedback.up.clear.label" }}{{ else }}{{ t "entry.ollama_feedback.up.label" }}{{ end }}</span>
+                    </button>
+                </li>
+                <li>
+                    <button
+                        class="page-button {{ if eq .entry.OllamaFeedback -1 }}active{{ end }}"
+                        title="{{ t "entry.ollama_feedback.down.title" }}"
+                        data-confirm="true"
+                        data-url="{{ routePath "/entry/%d/ollama-feedback/down" .entry.ID }}"
+                        data-label-question="{{ if eq .entry.OllamaFeedback -1 }}{{ t "entry.ollama_feedback.down.clear.confirm" }}{{ else }}{{ t "entry.ollama_feedback.down.confirm" }}{{ end }}"
+                        data-label-yes="{{ t "confirm.yes" }}"
+                        data-label-no="{{ t "confirm.no" }}"
+                        data-label-loading="{{ t "confirm.loading" }}">
+                        {{ icon "delete" }}<span class="icon-label">{{ if eq .entry.OllamaFeedback -1 }}{{ t "entry.ollama_feedback.down.clear.label" }}{{ else }}{{ t "entry.ollama_feedback.down.label" }}{{ end }}</span>
+                    </button>
+                </li>
+                {{ end }}
                 {{ if .hasSaveEntry }}
                 <li>
                     <button

@@ -155,6 +155,90 @@ func (s *Storage) GetOllamaUserProfile(userID int64, limit int) ([]OllamaProfile
 	return samples, nil
 }
 
+// SetOllamaFeedback applies an explicit user feedback (+1 = boost,
+// -1 = penalize, 0 = clear) on a single entry. As a side-effect:
+//   - +1 forces the score up to at least 0.95 and clears any active filter,
+//     putting the entry back to "unread" so the user can find it again.
+//   - -1 forces the score down to at most 0.05 and applies the filter so
+//     the entry leaves the regular reading lists.
+//   - 0 leaves the score and filter state untouched.
+//
+// The ollama_enriched_at timestamp is also stamped so the regular worker
+// treats the entry as already processed and the manual feedback survives
+// future refreshes (the worker also short-circuits on non-zero feedback).
+// Returns the resulting feedback value (which may equal value or 0 if the
+// caller passed value to toggle it off).
+func (s *Storage) SetOllamaFeedback(userID, entryID int64, value int) (int, error) {
+	if value < -1 || value > 1 {
+		return 0, fmt.Errorf(`store: invalid ollama feedback %d`, value)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf(`store: unable to begin feedback tx: %v`, err)
+	}
+	defer tx.Rollback()
+
+	var current int
+	if err := tx.QueryRow(
+		`SELECT ollama_feedback FROM entries WHERE id = $1 AND user_id = $2`,
+		entryID, userID,
+	).Scan(&current); err != nil {
+		return 0, fmt.Errorf(`store: unable to read feedback for entry #%d: %v`, entryID, err)
+	}
+
+	// If the user clicked the same button twice, treat it as an undo.
+	target := value
+	if current == value && value != 0 {
+		target = 0
+	}
+
+	switch target {
+	case 1:
+		if _, err := tx.Exec(`
+			UPDATE entries
+			SET ollama_feedback = 1,
+			    ollama_score = GREATEST(COALESCE(ollama_score, 0), 0.95),
+			    ollama_enriched_at = COALESCE(ollama_enriched_at, now()),
+			    ollama_filtered_at = NULL,
+			    status = CASE WHEN ollama_filtered_at IS NOT NULL THEN 'unread' ELSE status END,
+			    changed_at = now()
+			WHERE id = $1 AND user_id = $2
+		`, entryID, userID); err != nil {
+			return 0, fmt.Errorf(`store: unable to apply +1 feedback on entry #%d: %v`, entryID, err)
+		}
+	case -1:
+		if _, err := tx.Exec(`
+			UPDATE entries
+			SET ollama_feedback = -1,
+			    ollama_score = LEAST(COALESCE(ollama_score, 1), 0.05),
+			    ollama_enriched_at = COALESCE(ollama_enriched_at, now()),
+			    ollama_filtered_at = COALESCE(ollama_filtered_at, now()),
+			    status = 'read',
+			    changed_at = now()
+			WHERE id = $1 AND user_id = $2
+		`, entryID, userID); err != nil {
+			return 0, fmt.Errorf(`store: unable to apply -1 feedback on entry #%d: %v`, entryID, err)
+		}
+	case 0:
+		// Clearing feedback leaves the score and filter as they are: the user
+		// only walks back the explicit thumb, not the broader filtering logic.
+		if _, err := tx.Exec(`
+			UPDATE entries
+			SET ollama_feedback = 0,
+			    changed_at = now()
+			WHERE id = $1 AND user_id = $2
+		`, entryID, userID); err != nil {
+			return 0, fmt.Errorf(`store: unable to clear feedback on entry #%d: %v`, entryID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf(`store: unable to commit feedback tx: %v`, err)
+	}
+	return target, nil
+}
+
 // CountEntriesPendingOllamaEnrichment counts the user's entries that still
 // have no Ollama enrichment recorded. Used to label the manual backfill
 // button on the filtered-entries page.

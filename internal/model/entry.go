@@ -40,6 +40,7 @@ type Entry struct {
 	OllamaTags       []string      `json:"ollama_tags,omitempty"`
 	OllamaEnrichedAt *time.Time    `json:"ollama_enriched_at,omitempty"`
 	OllamaFilteredAt *time.Time    `json:"ollama_filtered_at,omitempty"`
+	OllamaFeedback   int           `json:"ollama_feedback"`
 }
 
 func NewEntry() *Entry {

@@ -198,6 +198,12 @@ func enrichOne(
 	threshold float64,
 	stats *batchStats,
 ) {
+	// Respect explicit user feedback: a thumb up/down pins the score and the
+	// filter state, so re-enriching would just churn the value the user just
+	// asked us to keep.
+	if entry.OllamaFeedback != 0 {
+		return
+	}
 	if !acquireSlot(ctx) {
 		return
 	}
