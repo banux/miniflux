@@ -174,6 +174,50 @@ Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent 
 - [x] **Phase 3 terminée** : badge score dans les listes, toggle par feed, compteur d'articles filtrés dans le menu.
 - [x] **Phase 4 terminée** : endpoint MCP `POST /mcp` avec auth par clé API, 9 tools exposés, tests de dispatch.
 - [x] **Phase 5 terminée** : chat avec agent ReAct qui exploite les tools MCP in-process, persistance des conversations, UI `/chat` avec liste + transcription + tool calls visibles.
+- [ ] **Phase 6** : v2 — adresser les limites assumées de Phase 5 + propager les feedbacks Ollama dans le profil (cf. ci-dessous).
+
+## Phase 6 — v2 : streaming, robustesse agentique, profil enrichi
+Phase de durcissement qui s'attaque aux limites laissées en v1, regroupées par thème.
+
+### Streaming et expérience utilisateur du chat
+- [ ] Endpoint SSE `GET /chat/{id}/stream` qui emet les events `assistant_partial`, `tool_call`, `tool_result`, `done`. Côté JS, abonnement au moment du POST + rendu incrémental.
+  - **Pourquoi** : aujourd'hui un tour fait 3-8 appels modèle, l'utilisateur attend en aveugle. Première amélioration UX visible.
+  - **Comment** : Ollama supporte `stream:true` sur `/api/chat`. Adapter `ChatWithTools` en `StreamChatWithTools(ctx, …) <-chan AgentEvent`. L'agent émet ses étapes au fur et à mesure ; le handler les forwarde au client.
+- [ ] Bouton « Stop » côté UI : `POST /chat/{id}/cancel` qui annule le contexte de la run en cours (table d'in-flight runs `sync.Map[conv_id]context.CancelFunc`).
+- [ ] Rendu markdown léger des réponses assistant (déjà supporté par les feeds, réutiliser le sanitizer existant pour autoriser `<p>`, `<ul>`, `<li>`, `<code>`, `<pre>`, `<a>`).
+- [ ] Renommer une conversation dans l'UI (`PUT /chat/{id}/title`).
+- [ ] Pagination ou troncature des messages : quand la transcription dépasse N tours, n'envoyer au LLM que le system prompt + les K derniers tours + un résumé des plus anciens.
+
+### Robustesse agentique
+- [ ] Détection d'appel répété : si le modèle émet exactement le même `(tool_name, arguments)` deux fois de suite, abréger avec un message "the agent stopped after detecting a duplicate tool call". Hash sur `name + JSON-canonical args`.
+- [ ] Backoff entre les tours sur erreur de tool (200 ms × 1.5^step) avant nouvel appel modèle, pour éviter qu'un Ollama instable consomme tout le budget de steps.
+- [ ] `CHAT_MODEL` séparé (défaut = `OLLAMA_MODEL`) pour pouvoir charger un modèle tool-calling dédié (ex. llama3.1, qwen2.5) sans toucher au modèle de scoring.
+- [ ] `disable_chat` par feed (colonne `feeds.disable_chat`, checkbox dans `edit_feed`) pour exclure du contexte LLM les feeds sensibles ou très volumineux. Les tools de listing filtrent.
+- [ ] Rate-limit par user : N runs simultanées max, M runs / heure. Renvoyer 429 plutôt que d'empiler.
+
+### Tests d'intégration
+- [ ] Test end-to-end de la boucle agentique avec httptest+sqlite (ou postgres-via-testcontainers selon la préférence du projet) : créer une conversation, simuler une réponse Ollama avec un tool_call, vérifier que le tool s'exécute et que le second tour reçoit l'observation.
+- [ ] Test des bornes user via les tools : un utilisateur A ne doit jamais voir/modifier les entrées de B même via une fausse `tools/call`.
+- [ ] Tests SSE : ordre des events, propre fermeture sur cancel.
+
+### Outils MCP supplémentaires (v2)
+- [ ] `set_ollama_feedback(entry_id, value)` — enfin exposer le bouton 👍/👎 à l'agent.
+- [ ] `refresh_feed(feed_id)` — re-déclencher un fetch + enrichissement à la demande.
+- [ ] `get_feed_entries(feed_id, limit, offset)` — naviguer un feed précis.
+- [ ] `bulk_mark_as_read({feed_id|category_id})` — gated par une politique de confirmation (la system prompt v1 interdit déjà les bulks ; ici on le rend explicite et confirmé).
+
+### Propagation des feedbacks Ollama dans le profil
+*(Limite reconnue à la fin de Phase 3 — les boutons 👍/👎 n'impactent que le score de l'entrée concernée, pas le profil utilisé pour les futures recommandations.)*
+- [ ] Étendre `OllamaProfileSample` avec un champ `Feedback int` (-1/0/+1).
+- [ ] Adapter `GetOllamaUserProfile` : sélectionner d'abord les entries `ollama_feedback != 0` (forte préférence explicite), puis compléter avec starred/read pour atteindre la limite.
+- [ ] Modifier le prompt de `ScoreEntry` : section « positive examples » et « negative examples » plutôt qu'une simple liste indistincte. Note explicite "the user actively dismissed the negative examples — penalise candidates similar to them".
+- [ ] Tests : profil avec mix +1/-1/star/read, vérifier ordre et balisage dans le prompt généré.
+
+### Risques / points de vigilance v2
+- SSE et middleware d'auth : vérifier que `X-Auth-Token` peut être passé via le client EventSource (sinon basculer sur `fetch` + `ReadableStream`).
+- Persistance partielle pendant un stream interrompu : on persiste à chaque `done` de tour, jamais sur des deltas, pour éviter d'écrire des messages tronqués.
+- Bulk-mutating tools : restent gated par confirmation explicite côté UI ; ne jamais leur faire confiance par défaut malgré la whitelist.
+- Cancel : doit faire fuiter zéro goroutine — toute run cancelable doit aussi nettoyer son entrée dans `inFlightRuns`.
 
 ## Comment activer en local
 ```sh
