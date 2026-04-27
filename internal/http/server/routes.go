@@ -10,6 +10,7 @@ import (
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/fever"
 	"miniflux.app/v2/internal/googlereader"
+	"miniflux.app/v2/internal/mcp"
 	"miniflux.app/v2/internal/storage"
 	"miniflux.app/v2/internal/ui"
 	"miniflux.app/v2/internal/worker"
@@ -35,6 +36,12 @@ func newRouter(store *storage.Storage, pool *worker.Pool) http.Handler {
 	// REST API routing.
 	if config.Opts.HasAPI() {
 		appMux.Handle("/v1/", api.NewHandler(store, pool))
+	}
+
+	// MCP endpoint (Model Context Protocol over JSON-RPC). Same auth path
+	// as the REST API: X-Auth-Token bound to a Miniflux user API key.
+	if config.Opts.HasAPI() {
+		appMux.Handle("/mcp", mcp.NewHandler(store))
 	}
 
 	// Metrics endpoint.

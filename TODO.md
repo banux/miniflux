@@ -95,39 +95,40 @@ Objectif : ajouter à chaque article un **score** (basé sur les appréciations 
 - [x] Helper template `ollamaEnabled`, `deRefFloat`, `deRefTime`.
 - [x] Clés i18n ajoutées (en/fr complètes, fallback anglais sur les 20 autres langues avec bon nombre de pluriels).
 
-## Phase 4 — Endpoint MCP (Model Context Protocol)
+## Phase 4 — Endpoint MCP (Model Context Protocol) ✅
 Exposer Miniflux comme un serveur MCP afin qu'un assistant LLM puisse lire et agir sur les feeds via le protocole standard. Réutilise la clé API existante pour l'authentification — pas de nouveau système de tokens.
 
 ### Auth & transport
-- [ ] Endpoint HTTP `POST /mcp` (JSON-RPC 2.0, transport Streamable HTTP de la spec MCP).
-- [ ] Auth via header `X-Auth-Token` (clé API Miniflux), même middleware que `/v1/*`. Refus 401 sans clé valide.
-- [ ] CORS aligné sur l'API REST.
+- [x] Endpoint HTTP `POST /mcp` (JSON-RPC 2.0).
+- [x] Auth via header `X-Auth-Token` (clé API Miniflux), middleware sister de `/v1/*`. Refus 401-équivalent JSON-RPC sans clé valide.
+- [ ] CORS aligné sur l'API REST. *(pas critique pour la v1 — le serveur est consommé par des agents pas par un navigateur tier ; à ajouter si besoin)*
 
 ### Tools exposés (v1, lecture + actions de base)
-- [ ] `list_unread_entries(limit, offset)` — entrées non lues de l'utilisateur authentifié.
-- [ ] `list_starred_entries(limit, offset)`.
-- [ ] `search_entries(query, limit)`.
-- [ ] `get_entry(id)` — détail + contenu.
-- [ ] `mark_entry_read(id)` / `mark_entry_unread(id)`.
-- [ ] `star_entry(id)` / `unstar_entry(id)`.
-- [ ] `list_feeds` / `list_categories`.
-- [ ] (Si scope étendu) `set_ollama_feedback(id, +1|-1|0)`.
+- [x] `list_unread_entries(limit, offset)` — entrées non lues de l'utilisateur authentifié.
+- [x] `list_starred_entries(limit, offset)`.
+- [x] `search_entries(query, limit)`.
+- [x] `get_entry(id)` — détail + contenu.
+- [x] `mark_entry_read(id)` / `mark_entry_unread(id)`.
+- [x] `toggle_starred(id)` (préféré à 2 tools `star`/`unstar` pour ne pas exposer un état que le LLM doit deviner).
+- [x] `list_feeds` / `list_categories`.
 
 ### Spec MCP à respecter
-- [ ] `initialize` : annoncer `serverInfo`, capabilities `tools.listChanged=false`.
-- [ ] `tools/list` : décrire chaque outil avec son JSON Schema d'entrée.
-- [ ] `tools/call` : exécuter et retourner `content` (TextContent).
-- [ ] Erreurs JSON-RPC standard (-32601 méthode inconnue, -32602 params invalides).
+- [x] `initialize` : `serverInfo` + capabilities `tools.listChanged=false`.
+- [x] `tools/list` : chaque outil avec son JSON Schema d'entrée.
+- [x] `tools/call` : retourne `content` (TextContent JSON-encodé pour les listes, "ok" pour les actions).
+- [x] Erreurs JSON-RPC standard (-32700 parse, -32600 invalid req, -32601 méthode inconnue, -32602 params invalides).
+- [x] Notifications (sans `id`) → 204 sans body.
+- [x] `notifications/initialized` et `ping` gérés.
 
 ### Tests
-- [ ] Tests handler : initialize, tools/list, tools/call avec et sans clé API valide.
-- [ ] Test d'intégration léger contre un client MCP en mémoire.
+- [x] Tests handler : initialize, tools/list, ping, tool inconnu, params invalides, notif → 204, refus sans clé API.
+- [x] Garde-fou `TestRegisteredToolHandlersHaveASchema` : un outil enregistré sans schema (ou inversement) fait échouer la suite.
 
 ### Risques / points de vigilance
-- Ne pas leak d'autres utilisateurs : tous les outils filtrent par `request.UserID(r)` issu du middleware.
-- Pas de side-effects par défaut : les outils mutateurs (`mark_*`, `star_*`) doivent être explicitement appelés, jamais déclenchés par `initialize`.
-- Streamable HTTP, pas de SSE persistant pour la v1 — chaque requête JSON-RPC est self-contained.
-- Pagination obligatoire sur les listes (limit/offset) pour ne pas dump 10k articles dans la fenêtre LLM.
+- Ne pas leak d'autres utilisateurs : chaque outil filtre par `request.UserID(r)` posé par le middleware.
+- Projections LLM-friendly : on ne renvoie pas les modèles Miniflux complets (timestamps, scraper rules, flags) — `entrySummary` / `feedSummary` / `categorySummary` ne sortent que ce dont l'agent a besoin.
+- Pagination obligatoire (defaultEntryLimit=25, max=100) pour ne pas dump 10k articles dans la fenêtre LLM.
+- Pas de side-effects par défaut : les outils mutateurs (`mark_*`, `toggle_starred`) ne sont déclenchés que sur `tools/call` explicite.
 
 ## Phase 5 — Chat intégré avec un agent qui utilise les outils MCP
 Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent LLM. L'agent appelle les outils du serveur MCP (Phase 4) pour répondre — résumer les non-lus, retrouver un article, marquer comme lu, etc. Dépend strictement de Phase 4.
@@ -177,7 +178,7 @@ Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent 
 - [x] **Phase 1bis terminée** : page de revue + restauration en place.
 - [x] **Phase 2 terminée** : retry/backoff, logs structurés, tests prompt/retry/contexte.
 - [x] **Phase 3 terminée** : badge score dans les listes, toggle par feed, compteur d'articles filtrés dans le menu.
-- [ ] **Phase 4** : endpoint MCP avec auth par clé API (à démarrer).
+- [x] **Phase 4 terminée** : endpoint MCP `POST /mcp` avec auth par clé API, 9 tools exposés, tests de dispatch.
 - [ ] **Phase 5** : chat avec agent qui exploite les tools MCP (dépend de Phase 4).
 
 ## Comment activer en local
