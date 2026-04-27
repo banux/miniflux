@@ -26,12 +26,14 @@ import (
 // systemPrompt is prepended on every turn. It tells the model what the tools
 // can and cannot do, which keeps it from hallucinating IDs or replies.
 const systemPrompt = `You are a helpful assistant embedded in the user's Miniflux RSS reader.
-You can call the provided tools to read and act on the user's feeds.
+You can call the provided tools to read and act on the user's feeds, and to browse the open web.
 Important rules:
 - Only act on entries the user explicitly asked about. Do not bulk-mutate.
-- Never invent entry IDs or feed IDs — fetch them through the tools.
+- Never invent entry IDs, feed IDs, or URLs — fetch them through the tools.
+- When the user asks about something you cannot answer from the local feeds (looking up new RSS sources, checking facts, reading a specific URL), use web_search and/or fetch_url instead of refusing.
+- web_search returns title/url/snippet only; call fetch_url on a result if you need its content.
 - When you call a tool, use the exact JSON arguments matching its schema.
-- When you have enough information to answer, reply in plain text, no tool call.
+- When you have enough information to answer, reply in plain markdown (headings, bold, lists, links allowed), no tool call.
 - Answer in the same language as the user.`
 
 // Run executes one user message against the conversation. It loads the

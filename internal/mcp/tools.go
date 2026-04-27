@@ -4,13 +4,24 @@
 package mcp // import "miniflux.app/v2/internal/mcp"
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	nurl "net/url"
+	"strings"
 
+	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/proxyrotator"
+	"miniflux.app/v2/internal/reader/fetcher"
+	"miniflux.app/v2/internal/reader/sanitizer"
+	"miniflux.app/v2/internal/reader/scraper"
 	"miniflux.app/v2/internal/storage"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 // toolHandler is the function signature every MCP tool implements. The
@@ -218,6 +229,170 @@ func init() {
 		}
 		return jsonResult(categoriesProjection(categories))
 	})
+
+	registerTool(tool{
+		Name:        "fetch_url",
+		Description: "Download a public web page by URL and return its readable text. Useful when the user asks you to look up content on the open web.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"url": map[string]any{
+					"type":        "string",
+					"description": "The absolute http(s) URL to fetch.",
+				},
+			},
+			"required": []string{"url"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			URL string `json:"url"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		text, err := fetchURLAsText(r.Context(), p.URL)
+		if err != nil {
+			return toolCallResult{}, err
+		}
+		return toolCallResult{Content: []contentBlock{textBlock(text)}}, nil
+	})
+
+	registerTool(tool{
+		Name:        "web_search",
+		Description: "Search the open web (DuckDuckGo HTML endpoint) and return the top results. Useful when the user wants to discover new sources.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search query.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Max number of results (default 5, max 10).",
+				},
+			},
+			"required": []string{"query"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if strings.TrimSpace(p.Query) == "" {
+			return toolCallResult{}, fmt.Errorf("%w: query is required", errBadArgs)
+		}
+		if p.Limit <= 0 {
+			p.Limit = 5
+		}
+		if p.Limit > 10 {
+			p.Limit = 10
+		}
+		results, err := webSearch(r.Context(), p.Query, p.Limit)
+		if err != nil {
+			return toolCallResult{}, err
+		}
+		return jsonResult(results)
+	})
+}
+
+// fetchURLAsText downloads the URL via the existing miniflux fetcher (which
+// already enforces SSRF protection through BlockPrivateNetworks) and returns
+// the readable text content. We strictly require an absolute http/https URL
+// to avoid the LLM passing in file:// or javascript: schemes.
+func fetchURLAsText(ctx context.Context, rawURL string) (string, error) {
+	parsed, err := nurl.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme %q (only http/https)", parsed.Scheme)
+	}
+
+	rb := fetcher.NewRequestBuilder()
+	rb.WithUserAgent("", config.Opts.HTTPClientUserAgent())
+	rb.WithTimeout(config.Opts.HTTPClientTimeout())
+	rb.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
+	rb.WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL())
+
+	_, content, err := scraper.ScrapeWebsite(rb, rawURL, "")
+	if err != nil {
+		return "", fmt.Errorf("fetch %s: %w", rawURL, err)
+	}
+
+	text := strings.TrimSpace(sanitizer.StripTags(content))
+	const maxLen = 12000
+	if len(text) > maxLen {
+		text = text[:maxLen] + "\n…(truncated)"
+	}
+	if text == "" {
+		return "(empty page)", nil
+	}
+	_ = ctx
+	return text, nil
+}
+
+type webSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// webSearch hits the DuckDuckGo HTML endpoint (no JS required, no API key)
+// and parses the result list. The endpoint is rate-limited but fine for the
+// occasional agent query — heavier usage would warrant a real search API.
+func webSearch(ctx context.Context, query string, limit int) ([]webSearchResult, error) {
+	endpoint := "https://duckduckgo.com/html/?q=" + nurl.QueryEscape(query)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", config.Opts.HTTPClientUserAgent())
+
+	client := &http.Client{Timeout: config.Opts.HTTPClientTimeout()}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("web_search: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("web_search: ddg %d: %s", resp.StatusCode, string(body))
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("web_search: parse html: %w", err)
+	}
+
+	out := make([]webSearchResult, 0, limit)
+	doc.Find("div.result").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		titleA := s.Find("a.result__a").First()
+		if titleA.Length() == 0 {
+			return true
+		}
+		href, _ := titleA.Attr("href")
+		// DDG returns redirect URLs like //duckduckgo.com/l/?uddg=<encoded>.
+		// Decode if present so the LLM gets the real link.
+		if u, err := nurl.Parse(href); err == nil {
+			if real := u.Query().Get("uddg"); real != "" {
+				if decoded, derr := nurl.QueryUnescape(real); derr == nil {
+					href = decoded
+				}
+			}
+		}
+		out = append(out, webSearchResult{
+			Title:   strings.TrimSpace(titleA.Text()),
+			URL:     href,
+			Snippet: strings.TrimSpace(s.Find(".result__snippet").Text()),
+		})
+		return len(out) < limit
+	})
+	return out, nil
 }
 
 // setEntryStatus is the shared body of mark_entry_read / mark_entry_unread.
