@@ -37,7 +37,7 @@
             {{ if .ToolCalls }}
                 <article class="chat-message chat-message-tool-call">
                     <header class="chat-message-role">{{ t "page.chat.role.tool_call" }}</header>
-                    {{ if .Content }}<div class="chat-message-body">{{ .Content }}</div>{{ end }}
+                    {{ if .Content }}<div class="chat-message-body">{{ chatMarkdown .Content }}</div>{{ end }}
                     <ul>
                         {{ range .ToolCalls }}
                         <li><code>{{ .Name }}({{ range $k, $v := .Arguments }}{{ $k }}={{ $v }} {{ end }})</code></li>
@@ -47,7 +47,7 @@
             {{ else }}
                 <article class="chat-message chat-message-assistant">
                     <header class="chat-message-role">{{ t "page.chat.role.assistant" }}</header>
-                    <div class="chat-message-body">{{ .Content }}</div>
+                    <div class="chat-message-body">{{ chatMarkdown .Content }}</div>
                 </article>
             {{ end }}
         {{ else if eq .Role "tool" }}

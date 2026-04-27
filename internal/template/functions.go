@@ -4,6 +4,7 @@
 package template // import "miniflux.app/v2/internal/template"
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"html/template"
@@ -20,10 +21,18 @@ import (
 	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/reader/sanitizer"
 	"miniflux.app/v2/internal/timezone"
 	"miniflux.app/v2/internal/ui/static"
 	"miniflux.app/v2/internal/urllib"
+
+	"github.com/yuin/goldmark"
 )
+
+// chatMarkdownEngine renders the agent's CommonMark output. Raw HTML is
+// disabled by default in goldmark, and we still pass the result through the
+// project sanitizer which allowlists tags and validates link schemes.
+var chatMarkdownEngine = goldmark.New()
 
 type funcMap struct {
 	basePath string
@@ -52,6 +61,14 @@ func (f *funcMap) Map() template.FuncMap {
 		},
 		"ollamaEnabled": config.Opts.OllamaEnabled,
 		"chatEnabled":   config.Opts.ChatEnabled,
+		"chatMarkdown": func(input string) template.HTML {
+			var buf bytes.Buffer
+			if err := chatMarkdownEngine.Convert([]byte(input), &buf); err != nil {
+				return template.HTML(template.HTMLEscapeString(input))
+			}
+			cleaned := sanitizer.SanitizeHTML("", buf.String(), &sanitizer.SanitizerOptions{OpenLinksInNewTab: true})
+			return template.HTML(cleaned)
+		},
 		"routePath": func(format string, args ...any) string {
 			if len(args) > 0 {
 				return f.basePath + fmt.Sprintf(format, args...)
