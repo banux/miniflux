@@ -16,9 +16,11 @@ import (
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/model"
 	"miniflux.app/v2/internal/proxyrotator"
+	feedhandler "miniflux.app/v2/internal/reader/handler"
 	"miniflux.app/v2/internal/reader/fetcher"
 	"miniflux.app/v2/internal/reader/sanitizer"
 	"miniflux.app/v2/internal/reader/scraper"
+	"miniflux.app/v2/internal/reader/subscription"
 	"miniflux.app/v2/internal/storage"
 
 	"github.com/PuerkitoBio/goquery"
@@ -228,6 +230,143 @@ func init() {
 			return toolCallResult{}, err
 		}
 		return jsonResult(categoriesProjection(categories))
+	})
+
+	registerTool(tool{
+		Name:        "discover_feeds",
+		Description: "Given a website URL, discover the RSS/Atom feeds it exposes. Returns a list of {title, url, type} that can be passed straight to subscribe_feed.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"website_url": map[string]any{
+					"type":        "string",
+					"description": "Homepage or article page URL to scan for feeds.",
+				},
+			},
+			"required": []string{"website_url"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			WebsiteURL string `json:"website_url"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if strings.TrimSpace(p.WebsiteURL) == "" {
+			return toolCallResult{}, fmt.Errorf("%w: website_url is required", errBadArgs)
+		}
+
+		rb := fetcher.NewRequestBuilder()
+		rb.WithUserAgent("", config.Opts.HTTPClientUserAgent())
+		rb.WithTimeout(config.Opts.HTTPClientTimeout())
+		rb.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
+		rb.WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL())
+
+		subs, errWrap := subscription.NewSubscriptionFinder(rb).FindSubscriptions(p.WebsiteURL, "", "")
+		if errWrap != nil {
+			return toolCallResult{}, fmt.Errorf("discover_feeds: %s", errWrap.Error())
+		}
+		out := make([]map[string]string, 0, len(subs))
+		for _, s := range subs {
+			out = append(out, map[string]string{"title": s.Title, "url": s.URL, "type": s.Type})
+		}
+		return jsonResult(out)
+	})
+
+	registerTool(tool{
+		Name:        "subscribe_feed",
+		Description: "Subscribe the authenticated user to an RSS/Atom feed by its feed URL. If category_id is omitted, the user's first category is used. Returns the created feed (id, title, url).",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"feed_url": map[string]any{
+					"type":        "string",
+					"description": "The feed URL (use discover_feeds first if you only have the website URL).",
+				},
+				"category_id": map[string]any{
+					"type":        "integer",
+					"description": "Category ID to put the feed in. Omit to use the user's first category.",
+				},
+				"crawler": map[string]any{
+					"type":        "boolean",
+					"description": "Set to true to enable scraper rules / readability for short feed contents.",
+				},
+			},
+			"required": []string{"feed_url"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			FeedURL    string `json:"feed_url"`
+			CategoryID int64  `json:"category_id"`
+			Crawler    bool   `json:"crawler"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if strings.TrimSpace(p.FeedURL) == "" {
+			return toolCallResult{}, fmt.Errorf("%w: feed_url is required", errBadArgs)
+		}
+
+		userID := request.UserID(r)
+		if p.CategoryID == 0 {
+			cat, err := store.FirstCategory(userID)
+			if err != nil {
+				return toolCallResult{}, fmt.Errorf("subscribe_feed: lookup default category: %w", err)
+			}
+			if cat == nil {
+				return toolCallResult{}, fmt.Errorf("subscribe_feed: user has no category, create one first with create_category")
+			}
+			p.CategoryID = cat.ID
+		} else if !store.CategoryIDExists(userID, p.CategoryID) {
+			return toolCallResult{}, fmt.Errorf("subscribe_feed: category %d not found for this user", p.CategoryID)
+		}
+
+		feed, errWrap := feedhandler.CreateFeed(store, userID, &model.FeedCreationRequest{
+			FeedURL:    p.FeedURL,
+			CategoryID: p.CategoryID,
+			Crawler:    p.Crawler,
+		})
+		if errWrap != nil {
+			return toolCallResult{}, fmt.Errorf("subscribe_feed: %s", errWrap.Error())
+		}
+		return jsonResult(map[string]any{
+			"id":          feed.ID,
+			"title":       feed.Title,
+			"feed_url":    feed.FeedURL,
+			"site_url":    feed.SiteURL,
+			"category_id": feed.Category.ID,
+		})
+	})
+
+	registerTool(tool{
+		Name:        "create_category",
+		Description: "Create a new category for the authenticated user.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"title": map[string]any{
+					"type":        "string",
+					"description": "Display name of the new category.",
+				},
+			},
+			"required": []string{"title"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			Title string `json:"title"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		title := strings.TrimSpace(p.Title)
+		if title == "" {
+			return toolCallResult{}, fmt.Errorf("%w: title is required", errBadArgs)
+		}
+		cat, err := store.CreateCategory(request.UserID(r), &model.CategoryCreationRequest{Title: title})
+		if err != nil {
+			return toolCallResult{}, err
+		}
+		return jsonResult(categorySummary{ID: cat.ID, Title: cat.Title})
 	})
 
 	registerTool(tool{
