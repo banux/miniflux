@@ -95,6 +95,11 @@
                     </a>
                 </li>
                 {{ end }}
+                {{ if chatEnabled }}
+                <li {{ if eq .menu "chat" }}class="active"{{ end }}>
+                    <a href="{{ routePath "/chat" }}" data-page="chat">{{ icon "comment" }}{{ t "menu.chat" }}</a>
+                </li>
+                {{ end }}
                 <li {{ if eq .menu "feeds" }}class="active"{{ end }} title="{{ t "tooltip.keyboard_shortcuts" "g f" }}">
                     <a href="{{ routePath "/feeds" }}" data-page="feeds">{{ icon "feeds" }}{{ t "menu.feeds" }}
                       {{ if gt .countErrorFeeds 0 }}

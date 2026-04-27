@@ -6,9 +6,11 @@ package mcp // import "miniflux.app/v2/internal/mcp"
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"miniflux.app/v2/internal/storage"
 	"miniflux.app/v2/internal/version"
@@ -148,3 +150,64 @@ func writeJSONRPCError(w http.ResponseWriter, id json.RawMessage, code int, msg 
 // errBadArgs is the canonical error returned by tools when the LLM passes
 // malformed arguments. Tools wrap their own context on top.
 var errBadArgs = errors.New("invalid tool arguments")
+
+// --- In-process client ------------------------------------------------------
+//
+// The chat agent lives in the same process as the MCP server. Instead of
+// looping back over HTTP, it calls these helpers directly. They keep the
+// boundary intact: the agent only knows the tool catalog and the call
+// surface, never the individual tool implementations.
+
+// CatalogTool is the public representation of a tool exposed to in-process
+// callers (chat agent). Mirrors the JSON shape advertised by tools/list.
+type CatalogTool struct {
+	Name        string
+	Description string
+	InputSchema map[string]any
+}
+
+// Catalog returns the list of tools the MCP server exposes. The slice is a
+// copy: callers are free to filter or reorder it.
+func Catalog() []CatalogTool {
+	out := make([]CatalogTool, 0, len(toolList))
+	for _, t := range toolList {
+		out = append(out, CatalogTool{
+			Name:        t.Name,
+			Description: t.Description,
+			InputSchema: t.InputSchema,
+		})
+	}
+	return out
+}
+
+// CallTool runs a tool in-process with the given user identity. Arguments
+// must be a JSON object matching the tool's input schema; `nil` is treated
+// as an empty object. The returned content is what the LLM should observe;
+// isError flags semantic failures the agent can react to.
+func CallTool(r *http.Request, store *storage.Storage, name string, arguments []byte) (content string, isError bool, err error) {
+	exec, ok := toolHandlers[name]
+	if !ok {
+		return "", true, fmt.Errorf("unknown MCP tool: %s", name)
+	}
+	if r == nil {
+		return "", true, errors.New("CallTool: nil request, user context required")
+	}
+
+	out, execErr := exec(r, store, arguments)
+	if execErr != nil {
+		return "error: " + execErr.Error(), true, nil
+	}
+	if len(out.Content) == 0 {
+		return "", out.IsError, nil
+	}
+	// MCP returns one or more content blocks; for the agent we concatenate
+	// the text payloads (in practice, tools return a single TextContent).
+	var sb strings.Builder
+	for i, block := range out.Content {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(block.Text)
+	}
+	return sb.String(), out.IsError, nil
+}

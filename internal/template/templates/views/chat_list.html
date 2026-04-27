@@ -1,0 +1,35 @@
+{{ define "title"}}{{ t "page.chat.title" }}{{ end }}
+
+{{ define "page_header"}}
+<section class="page-header" aria-labelledby="page-header-title">
+    <h1 id="page-header-title" dir="auto">{{ t "page.chat.title" }}</h1>
+</section>
+{{ end }}
+
+{{ define "content"}}
+<form method="post" action="{{ routePath "/chat" }}">
+    <input type="hidden" name="csrf" value="{{ .csrf }}">
+    <div class="buttons">
+        <button type="submit" class="button button-primary">{{ t "page.chat.new" }}</button>
+    </div>
+</form>
+
+{{ if not .conversations }}
+<p role="alert" class="alert alert-info">{{ t "page.chat.empty" }}</p>
+{{ else }}
+<ul class="item-list">
+    {{ range .conversations }}
+    <li>
+        <a href="{{ routePath "/chat/%d" .ID }}">
+            <strong>{{ if .Title }}{{ .Title }}{{ else }}{{ t "page.chat.untitled" }}{{ end }}</strong>
+        </a>
+        <span class="category">
+            <time datetime="{{ isodate .UpdatedAt }}" title="{{ isodate .UpdatedAt }}">
+                {{ elapsed $.user.Timezone .UpdatedAt }}
+            </time>
+        </span>
+    </li>
+    {{ end }}
+</ul>
+{{ end }}
+{{ end }}

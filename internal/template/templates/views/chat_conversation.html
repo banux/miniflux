@@ -1,0 +1,80 @@
+{{ define "title"}}{{ if .conversation.Title }}{{ .conversation.Title }}{{ else }}{{ t "page.chat.untitled" }}{{ end }}{{ end }}
+
+{{ define "page_header"}}
+<section class="page-header" aria-labelledby="page-header-title">
+    <h1 id="page-header-title" dir="auto">
+        {{ if .conversation.Title }}{{ .conversation.Title }}{{ else }}{{ t "page.chat.untitled" }}{{ end }}
+    </h1>
+    <ul>
+        <li>
+            <a href="{{ routePath "/chat" }}">{{ t "page.chat.back" }}</a>
+        </li>
+        <li>
+            <button
+                data-confirm="true"
+                data-url="{{ routePath "/chat/%d/delete" .conversation.ID }}"
+                data-redirect-url="{{ routePath "/chat" }}"
+                data-label-question="{{ t "page.chat.delete.confirm" }}"
+                data-label-yes="{{ t "confirm.yes" }}"
+                data-label-no="{{ t "confirm.no" }}"
+                data-label-loading="{{ t "confirm.loading" }}">
+                {{ t "page.chat.delete" }}
+            </button>
+        </li>
+    </ul>
+</section>
+{{ end }}
+
+{{ define "content"}}
+<div class="chat-transcript">
+    {{ range .conversation.Messages }}
+        {{ if eq .Role "user" }}
+            <article class="chat-message chat-message-user">
+                <header class="chat-message-role">{{ t "page.chat.role.user" }}</header>
+                <div class="chat-message-body">{{ .Content }}</div>
+            </article>
+        {{ else if eq .Role "assistant" }}
+            {{ if .ToolCalls }}
+                <article class="chat-message chat-message-tool-call">
+                    <header class="chat-message-role">{{ t "page.chat.role.tool_call" }}</header>
+                    {{ if .Content }}<div class="chat-message-body">{{ .Content }}</div>{{ end }}
+                    <ul>
+                        {{ range .ToolCalls }}
+                        <li><code>{{ .Name }}({{ range $k, $v := .Arguments }}{{ $k }}={{ $v }} {{ end }})</code></li>
+                        {{ end }}
+                    </ul>
+                </article>
+            {{ else }}
+                <article class="chat-message chat-message-assistant">
+                    <header class="chat-message-role">{{ t "page.chat.role.assistant" }}</header>
+                    <div class="chat-message-body">{{ .Content }}</div>
+                </article>
+            {{ end }}
+        {{ else if eq .Role "tool" }}
+            <article class="chat-message chat-message-tool-result">
+                <header class="chat-message-role">{{ t "page.chat.role.tool_result" }} <code>{{ .ToolName }}</code></header>
+                <details>
+                    <summary>{{ t "page.chat.role.tool_result_show" }}</summary>
+                    <pre>{{ .Content }}</pre>
+                </details>
+            </article>
+        {{ end }}
+    {{ end }}
+</div>
+
+<form method="post" action="{{ routePath "/chat/%d/messages" .conversation.ID }}" class="chat-form">
+    <input type="hidden" name="csrf" value="{{ .csrf }}">
+    <label for="chat-message-input">{{ t "page.chat.message.label" }}</label>
+    <textarea
+        id="chat-message-input"
+        name="message"
+        rows="3"
+        required
+        autofocus></textarea>
+    <div class="buttons">
+        <button type="submit" class="button button-primary" data-label-loading="{{ t "page.chat.message.sending" }}">
+            {{ t "page.chat.message.send" }}
+        </button>
+    </div>
+</form>
+{{ end }}

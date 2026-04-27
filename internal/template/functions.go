@@ -51,6 +51,7 @@ func (f *funcMap) Map() template.FuncMap {
 			return config.Opts.AuthProxyHeader() != ""
 		},
 		"ollamaEnabled": config.Opts.OllamaEnabled,
+		"chatEnabled":   config.Opts.ChatEnabled,
 		"routePath": func(format string, args ...any) string {
 			if len(args) > 0 {
 				return f.basePath + fmt.Sprintf(format, args...)

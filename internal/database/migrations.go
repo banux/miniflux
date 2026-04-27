@@ -1532,4 +1532,32 @@ var migrations = [...]func(tx *sql.Tx) error{
 		`)
 		return err
 	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			CREATE TABLE chat_conversations (
+				id bigserial PRIMARY KEY,
+				user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				title text NOT NULL DEFAULT '',
+				created_at timestamp with time zone NOT NULL DEFAULT now(),
+				updated_at timestamp with time zone NOT NULL DEFAULT now()
+			);
+			CREATE INDEX chat_conversations_user_idx
+				ON chat_conversations (user_id, updated_at DESC);
+
+			CREATE TABLE chat_messages (
+				id bigserial PRIMARY KEY,
+				conversation_id bigint NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+				role text NOT NULL,
+				content text NOT NULL DEFAULT '',
+				tool_calls jsonb,
+				tool_name text,
+				created_at timestamp with time zone NOT NULL DEFAULT now(),
+				CONSTRAINT chat_messages_role_check
+					CHECK (role IN ('system', 'user', 'assistant', 'tool'))
+			);
+			CREATE INDEX chat_messages_conv_idx
+				ON chat_messages (conversation_id, id);
+		`)
+		return err
+	},
 }

@@ -60,6 +60,13 @@ func Serve(store *storage.Storage, pool *worker.Pool) http.Handler {
 	mux.HandleFunc("POST /ollama/enrich", handler.triggerOllamaBackfill)
 	mux.HandleFunc("POST /ollama/feedback/{entryID}/{direction}", handler.setOllamaFeedback)
 
+	// Chat agent (gated on CHAT_ENABLED at handler level).
+	mux.HandleFunc("GET /chat", handler.showChatListPage)
+	mux.HandleFunc("POST /chat", handler.createChatConversation)
+	mux.HandleFunc("GET /chat/{conversationID}", handler.showChatConversationPage)
+	mux.HandleFunc("POST /chat/{conversationID}/messages", handler.postChatMessage)
+	mux.HandleFunc("POST /chat/{conversationID}/delete", handler.deleteChatConversation)
+
 	// Search pages.
 	mux.HandleFunc("GET /search", handler.showSearchPage)
 	mux.HandleFunc("GET /search/entry/{entryID}", handler.showSearchEntryPage)

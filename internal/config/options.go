@@ -534,6 +534,27 @@ func NewConfigOptions() *configOptions {
 					return validateGreaterOrEqualThan(rawValue, 1)
 				},
 			},
+			"CHAT_ENABLED": {
+				parsedBoolValue: false,
+				rawValue:        "0",
+				valueType:       boolType,
+			},
+			"CHAT_MAX_STEPS": {
+				parsedIntValue: 8,
+				rawValue:       "8",
+				valueType:      intType,
+				validator: func(rawValue string) error {
+					return validateRange(rawValue, 1, 32)
+				},
+			},
+			"CHAT_TIMEOUT": {
+				parsedDuration: 120 * time.Second,
+				rawValue:       "120",
+				valueType:      secondType,
+				validator: func(rawValue string) error {
+					return validateGreaterOrEqualThan(rawValue, 5)
+				},
+			},
 			"POLLING_FREQUENCY": {
 				parsedDuration: 60 * time.Minute,
 				rawValue:       "60",
@@ -1005,6 +1026,20 @@ func (c *configOptions) OllamaFilterThreshold() int {
 
 func (c *configOptions) OllamaMinTrainingSamples() int {
 	return c.options["OLLAMA_MIN_TRAINING_SAMPLES"].parsedIntValue
+}
+
+// ChatEnabled reports whether the conversational agent is wired up. Requires
+// the Ollama integration to be ready since the agent reuses the same client.
+func (c *configOptions) ChatEnabled() bool {
+	return c.options["CHAT_ENABLED"].parsedBoolValue && c.OllamaEnabled()
+}
+
+func (c *configOptions) ChatMaxSteps() int {
+	return c.options["CHAT_MAX_STEPS"].parsedIntValue
+}
+
+func (c *configOptions) ChatTimeout() time.Duration {
+	return c.options["CHAT_TIMEOUT"].parsedDuration
 }
 
 func (c *configOptions) PollingFrequency() time.Duration {

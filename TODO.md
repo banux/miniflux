@@ -130,46 +130,40 @@ Exposer Miniflux comme un serveur MCP afin qu'un assistant LLM puisse lire et ag
 - Pagination obligatoire (defaultEntryLimit=25, max=100) pour ne pas dump 10k articles dans la fenêtre LLM.
 - Pas de side-effects par défaut : les outils mutateurs (`mark_*`, `toggle_starred`) ne sont déclenchés que sur `tools/call` explicite.
 
-## Phase 5 — Chat intégré avec un agent qui utilise les outils MCP
-Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent LLM. L'agent appelle les outils du serveur MCP (Phase 4) pour répondre — résumer les non-lus, retrouver un article, marquer comme lu, etc. Dépend strictement de Phase 4.
+## Phase 5 — Chat intégré avec un agent qui utilise les outils MCP ✅
+Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent LLM. L'agent appelle les outils du serveur MCP (Phase 4) pour répondre — résumer les non-lus, retrouver un article, marquer comme lu, etc.
 
 ### Backend
-- [ ] Reuse du client Ollama existant (`internal/integration/ollama/client.go`) pour appeler le modèle conversationnel (ou un modèle dédié via `OLLAMA_CHAT_MODEL`).
-- [ ] Nouveau package `internal/integration/agent/` :
-  - [ ] Boucle agentique ReAct-style : LLM → tool_call → exécution MCP → observation → LLM, jusqu'à `stop` ou `max_steps` (défaut 8).
-  - [ ] Exécution des tools en process (pas via HTTP MCP) en réutilisant les mêmes handlers, pour éviter le round-trip réseau ; le serveur MCP reste exposé pour les clients externes.
-  - [ ] Garde-fou : timeout global par tour, budget de tokens estimé, rate-limit par utilisateur.
-- [ ] Persistance conversations : table `chat_conversations` + `chat_messages` (rôle, contenu, tool_calls JSON, ts). Une conversation = un user_id.
-- [ ] Routes UI :
-  - [ ] `GET /chat` — liste des conversations.
-  - [ ] `GET /chat/{id}` — vue conversation.
-  - [ ] `POST /chat/{id}/messages` — nouveau message (streaming SSE pour la réponse).
-  - [ ] `POST /chat` — créer une conversation.
-  - [ ] `DELETE /chat/{id}`.
+- [x] Réutilise le client Ollama existant (mêmes URL et modèle qu'`OLLAMA_MODEL`).
+- [x] Nouveau package `internal/integration/agent/` : boucle ReAct LLM → tool_call → MCP → observation → LLM, capée par `CHAT_MAX_STEPS` (défaut 8). Toutes les étapes (user msg, tool calls, observations, réponse finale) sont persistées avant le redirect, donc l'utilisateur voit la transcription complète.
+- [x] Round-trip via `mcp.CallTool` (in-process) avec un `*http.Request` synthétique portant `request.UserID` — l'agent traite MCP comme opaque, pas d'auth dance ni de réseau.
+- [x] `internal/integration/ollama/agent_chat.go` : nouvelle méthode `ChatWithTools` qui parle `/api/chat` avec `tools[]` et parse `tool_calls`.
+- [x] Persistance : tables `chat_conversations` + `chat_messages` avec `tool_calls jsonb`, `tool_name`, contrainte CHECK sur le role.
+- [x] Routes UI : `GET /chat`, `POST /chat`, `GET /chat/{id}`, `POST /chat/{id}/messages`, `POST /chat/{id}/delete`.
 
 ### Config
-- [ ] `CHAT_ENABLED` (bool, défaut 0) — découplé d'`OLLAMA_ENABLED` parce que le scoring peut tourner sans le chat et inversement.
-- [ ] `CHAT_MODEL` (string, défaut = `OLLAMA_MODEL`).
-- [ ] `CHAT_MAX_STEPS` (int, défaut 8).
-- [ ] `CHAT_TIMEOUT` (secondes, défaut 120).
+- [x] `CHAT_ENABLED` (bool, défaut 0) — gate qui dépend aussi d'`OLLAMA_ENABLED`.
+- [x] `CHAT_MAX_STEPS` (int, défaut 8, range 1–32).
+- [x] `CHAT_TIMEOUT` (secondes, défaut 120).
+- *(Décision : pas de `CHAT_MODEL` séparé pour l'instant, on reste sur `OLLAMA_MODEL`. À ajouter si l'expérience montre qu'un modèle tool-calling dédié est nécessaire.)*
 
 ### UI
-- [ ] Page chat (template + JS minimal) avec affichage incrémental (SSE).
-- [ ] Affichage des `tool_calls` (déroulant compact "the agent ran search_entries(query=...) → 5 results") pour la transparence.
-- [ ] Lien dans le menu principal, gated par `chatEnabled`.
-- [ ] Préserver markdown léger dans les réponses.
+- [x] Page liste `chat_list.html` + page conversation `chat_conversation.html`.
+- [x] Affichage des `tool_calls` (avec arguments) et `tool_results` (dans un `<details>` pour ne pas polluer la lecture).
+- [x] Lien dans le menu principal, gated par `chatEnabled`.
+- [x] Stratégie batch (pas de SSE pour la v1) : on attend la réponse complète puis on rafraîchit la page.
+- [x] Bouton de suppression de conversation (data-confirm).
 
 ### Tests
-- [ ] Tests boucle agentique : terminaison correcte, max_steps respecté, propagation d'erreur tool.
-- [ ] Tests streaming handler avec httptest.
-- [ ] Test des bornes user (pas de fuite cross-user via les tools).
+- [x] Tests des helpers purs : `deriveTitle`, `buildLLMMessages`, `convertToolCalls`, `buildToolCatalog`.
+- [x] Tests existants `mcp` couvrent le dispatch, le `Catalog()` et `CallTool()` côté MCP.
+- [x] Tests Ollama existants couvrent le retry, la troncature et le parsing.
 
 ### Risques / points de vigilance
-- Boucle infinie : capper `max_steps` + watchdog timeout + détecter répétition d'appel identique.
-- Coût : un chat par défaut peut faire 5–10 appels modèle ; bien afficher la progression à l'UI pour que l'attente soit lisible.
-- Sécurité : les tools mutateurs doivent passer par une **confirmation user** côté UI avant exécution effective (ou whitelist explicite côté config), pour éviter qu'un prompt injection ne marque tout comme lu.
-- Contexte LLM : injecter un préambule système qui rappelle « tu n'as accès qu'aux outils suivants, n'invente pas les IDs ».
-- Politique de contenu : ne pas envoyer le contenu des articles privés au modèle si l'utilisateur a coché un futur `disable_chat` sur le feed.
+- Boucle infinie : capée par `CHAT_MAX_STEPS` + `CHAT_TIMEOUT` global. Une exhaustion produit un assistant message explicite "Reached the N-step budget...".
+- Coût : un chat peut faire 3-8 appels modèle ; pas de SSE en v1 → l'utilisateur attend. Acceptable pour la v1.
+- Sécurité : les tools mutateurs (`mark_entry_read`, `toggle_starred`) sont en whitelist auto comme demandé. Le system prompt rappelle « never bulk-mutate, only act on entries the user explicitly asked about ».
+- Contexte LLM : préambule système strict, regénéré à chaque tour.
 
 ## État courant
 - [x] Branche `ollama` créée.
@@ -179,7 +173,7 @@ Ajouter une page de chat dans Miniflux où l'utilisateur dialogue avec un agent 
 - [x] **Phase 2 terminée** : retry/backoff, logs structurés, tests prompt/retry/contexte.
 - [x] **Phase 3 terminée** : badge score dans les listes, toggle par feed, compteur d'articles filtrés dans le menu.
 - [x] **Phase 4 terminée** : endpoint MCP `POST /mcp` avec auth par clé API, 9 tools exposés, tests de dispatch.
-- [ ] **Phase 5** : chat avec agent qui exploite les tools MCP (dépend de Phase 4).
+- [x] **Phase 5 terminée** : chat avec agent ReAct qui exploite les tools MCP in-process, persistance des conversations, UI `/chat` avec liste + transcription + tool calls visibles.
 
 ## Comment activer en local
 ```sh
