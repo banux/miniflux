@@ -42,6 +42,8 @@ func (e *Engine) ParseTemplates() {
 		"categories.html":          {"layout.html"},
 		"category_entries.html":    {"item_meta.html", "layout.html", "pagination.html"},
 		"category_feeds.html":      {"feed_list.html", "layout.html"},
+		"chat_conversation.html":   {"layout.html"},
+		"chat_list.html":           {"layout.html"},
 		"choose_subscription.html": {"feed_menu.html", "layout.html"},
 		"create_api_key.html":      {"layout.html", "settings_menu.html"},
 		"create_category.html":     {"layout.html"},
