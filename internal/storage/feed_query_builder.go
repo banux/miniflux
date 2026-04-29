@@ -178,7 +178,8 @@ func (f *feedQueryBuilder) GetFeeds() (model.Feeds, error) {
 			f.pushover_priority,
 			f.proxy_url,
 			f.ignore_entry_updates,
-			f.disable_ollama
+			f.disable_ollama,
+			f.disable_chat
 		FROM
 			feeds f
 		LEFT JOIN
@@ -262,6 +263,7 @@ func (f *feedQueryBuilder) GetFeeds() (model.Feeds, error) {
 			&feed.ProxyURL,
 			&feed.IgnoreEntryUpdates,
 			&feed.DisableOllama,
+			&feed.DisableChat,
 		)
 
 		if err != nil {

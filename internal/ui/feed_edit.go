@@ -68,6 +68,7 @@ func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 		WebhookURL:                  feed.WebhookURL,
 		DisableHTTP2:                feed.DisableHTTP2,
 		DisableOllama:               feed.DisableOllama,
+		DisableChat:                 feed.DisableChat,
 		NtfyEnabled:                 feed.NtfyEnabled,
 		NtfyPriority:                feed.NtfyPriority,
 		NtfyTopic:                   feed.NtfyTopic,

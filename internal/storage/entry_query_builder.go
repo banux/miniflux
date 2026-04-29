@@ -48,6 +48,14 @@ func (e *EntryQueryBuilder) IncludeOllamaFiltered() *EntryQueryBuilder {
 	return e
 }
 
+// HideChatDisabledFeeds excludes entries that belong to a feed flagged with
+// disable_chat. Used by the MCP layer so the chat agent never sees private
+// or noisy feeds the user opted out of.
+func (e *EntryQueryBuilder) HideChatDisabledFeeds() *EntryQueryBuilder {
+	e.conditions = append(e.conditions, "f.disable_chat = false")
+	return e
+}
+
 // WithEnclosures fetches enclosures for each entry.
 func (e *EntryQueryBuilder) WithEnclosures() *EntryQueryBuilder {
 	e.fetchEnclosures = true
