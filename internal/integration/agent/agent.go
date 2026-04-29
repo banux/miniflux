@@ -8,12 +8,16 @@ package agent // import "miniflux.app/v2/internal/integration/agent"
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/http/request"
@@ -79,13 +83,16 @@ func Run(ctx context.Context, store *storage.Storage, userID, conversationID int
 
 	client := ollama.NewClient(
 		config.Opts.OllamaURL(),
-		config.Opts.OllamaModel(),
+		config.Opts.ChatModel(),
 		config.Opts.ChatTimeout(),
 	)
 
 	tools := buildToolCatalog()
 
 	maxSteps := config.Opts.ChatMaxSteps()
+	var lastSignature string
+	var duplicateRuns int
+	const duplicateLimit = 1 // a single repeat is fine; two in a row is a loop
 	for step := 0; step < maxSteps; step++ {
 		messages := buildLLMMessages(conv)
 
@@ -109,9 +116,26 @@ func Run(ctx context.Context, store *storage.Storage, userID, conversationID int
 			return nil
 		}
 
+		toolCalls := convertToolCalls(resp.ToolCalls)
+
+		// Loop guard: a model that re-emits the exact same tool call (same
+		// name + same canonicalised args) more than once is stuck. Bail out
+		// rather than burn the whole step budget on a no-op cycle.
+		signature := signToolCalls(toolCalls)
+		if signature != "" && signature == lastSignature {
+			duplicateRuns++
+			if duplicateRuns > duplicateLimit {
+				persistErrorAssistant(store, conv,
+					"The agent stopped after detecting a repeated tool call — the model seems stuck on the same step.")
+				return nil
+			}
+		} else {
+			duplicateRuns = 0
+		}
+		lastSignature = signature
+
 		// Persist the assistant's tool call request so the UI can render it
 		// and the next iteration of the loop can re-send it to the model.
-		toolCalls := convertToolCalls(resp.ToolCalls)
 		toolReq := &model.ChatMessage{
 			ConversationID: conv.ID,
 			Role:           model.ChatRoleAssistant,
@@ -240,6 +264,27 @@ func persistErrorAssistant(store *storage.Storage, conv *model.ChatConversation,
 		return
 	}
 	conv.Messages = append(conv.Messages, msg)
+}
+
+// signToolCalls produces a stable signature for a set of tool calls so the
+// loop can detect that the model is re-emitting the same step. Arguments are
+// re-marshalled with sorted keys (json.Marshal does that for map[string]any
+// natively in Go) to make `{a:1,b:2}` and `{b:2,a:1}` look identical.
+func signToolCalls(calls []model.ChatToolCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(calls))
+	for _, c := range calls {
+		body, err := json.Marshal(c.Arguments)
+		if err != nil {
+			body = []byte("?")
+		}
+		parts = append(parts, c.Name+"|"+string(body))
+	}
+	sort.Strings(parts) // make order-of-tool-calls irrelevant
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:])
 }
 
 // deriveTitle picks a short, human-friendly title from the first user message.

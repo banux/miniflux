@@ -539,6 +539,11 @@ func NewConfigOptions() *configOptions {
 				rawValue:        "0",
 				valueType:       boolType,
 			},
+			"CHAT_MODEL": {
+				parsedStringValue: "",
+				rawValue:          "",
+				valueType:         stringType,
+			},
 			"CHAT_MAX_STEPS": {
 				parsedIntValue: 8,
 				rawValue:       "8",
@@ -1036,6 +1041,16 @@ func (c *configOptions) ChatEnabled() bool {
 
 func (c *configOptions) ChatMaxSteps() int {
 	return c.options["CHAT_MAX_STEPS"].parsedIntValue
+}
+
+// ChatModel returns the model the conversational agent should use. Falls
+// back to OllamaModel when CHAT_MODEL is empty so users with a single model
+// don't need to configure two settings.
+func (c *configOptions) ChatModel() string {
+	if v := c.options["CHAT_MODEL"].parsedStringValue; v != "" {
+		return v
+	}
+	return c.OllamaModel()
 }
 
 func (c *configOptions) ChatTimeout() time.Duration {
