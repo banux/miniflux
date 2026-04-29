@@ -70,6 +70,7 @@ func init() {
 		builder.WithSorting("published_at", "DESC")
 		builder.WithLimit(p.clampLimit())
 		builder.WithOffset(p.Offset)
+		builder.HideChatDisabledFeeds()
 		builder.WithoutContent()
 		entries, err := builder.GetEntries()
 		if err != nil {
@@ -92,6 +93,7 @@ func init() {
 		builder.WithSorting("published_at", "DESC")
 		builder.WithLimit(p.clampLimit())
 		builder.WithOffset(p.Offset)
+		builder.HideChatDisabledFeeds()
 		builder.WithoutContent()
 		entries, err := builder.GetEntries()
 		if err != nil {
@@ -138,6 +140,7 @@ func init() {
 		builder := store.NewEntryQueryBuilder(request.UserID(r))
 		builder.WithSearchQuery(p.Query)
 		builder.WithLimit(limit)
+		builder.HideChatDisabledFeeds()
 		builder.WithoutContent()
 		entries, err := builder.GetEntries()
 		if err != nil {
@@ -210,14 +213,20 @@ func init() {
 
 	registerTool(tool{
 		Name:        "list_feeds",
-		Description: "List the authenticated user's feeds.",
+		Description: "List the authenticated user's feeds. Feeds opted out of chat (disable_chat) are skipped so the agent never references them.",
 		InputSchema: emptySchema(),
 	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
 		feeds, err := store.Feeds(request.UserID(r))
 		if err != nil {
 			return toolCallResult{}, err
 		}
-		return jsonResult(feedsProjection(feeds))
+		visible := make(model.Feeds, 0, len(feeds))
+		for _, f := range feeds {
+			if !f.DisableChat {
+				visible = append(visible, f)
+			}
+		}
+		return jsonResult(feedsProjection(visible))
 	})
 
 	registerTool(tool{
@@ -367,6 +376,103 @@ func init() {
 			return toolCallResult{}, err
 		}
 		return jsonResult(categorySummary{ID: cat.ID, Title: cat.Title})
+	})
+
+	registerTool(tool{
+		Name:        "get_feed_entries",
+		Description: "Return recent entries for a specific feed owned by the user, newest first. Useful when the user names a feed and wants to know what's new there.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"feed_id": map[string]any{"type": "integer", "description": "Numeric ID of the feed."},
+				"limit":   map[string]any{"type": "integer", "description": "Max number of entries (default 25, max 100)."},
+				"offset":  map[string]any{"type": "integer", "description": "Pagination offset (default 0)."},
+			},
+			"required": []string{"feed_id"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			FeedID int64 `json:"feed_id"`
+			Limit  int   `json:"limit"`
+			Offset int   `json:"offset"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if p.FeedID == 0 {
+			return toolCallResult{}, fmt.Errorf("%w: feed_id is required", errBadArgs)
+		}
+		limit := p.Limit
+		if limit <= 0 {
+			limit = defaultEntryLimit
+		}
+		if limit > maxEntryLimit {
+			limit = maxEntryLimit
+		}
+		builder := store.NewEntryQueryBuilder(request.UserID(r))
+		builder.WithFeedID(p.FeedID)
+		builder.WithSorting("published_at", "DESC")
+		builder.WithLimit(limit)
+		builder.WithOffset(p.Offset)
+		builder.HideChatDisabledFeeds()
+		builder.WithoutContent()
+		entries, err := builder.GetEntries()
+		if err != nil {
+			return toolCallResult{}, err
+		}
+		return jsonResult(entriesProjection(entries))
+	})
+
+	registerTool(tool{
+		Name:        "refresh_feed",
+		Description: "Refresh a single feed (re-fetch and ingest new entries). Returns 'ok' on success.",
+		InputSchema: idSchema("feed_id", "Numeric ID of the feed to refresh."),
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			FeedID int64 `json:"feed_id"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if p.FeedID == 0 {
+			return toolCallResult{}, fmt.Errorf("%w: feed_id is required", errBadArgs)
+		}
+		if errWrap := feedhandler.RefreshFeed(store, request.UserID(r), p.FeedID, false); errWrap != nil {
+			return toolCallResult{}, fmt.Errorf("refresh_feed: %s", errWrap.Error())
+		}
+		return toolCallResult{Content: []contentBlock{textBlock("ok")}}, nil
+	})
+
+	registerTool(tool{
+		Name:        "set_ollama_feedback",
+		Description: "Apply explicit user feedback on the Ollama score of an entry: +1 boosts and unfilters it, -1 lowers and filters it, 0 clears the previous feedback. Posting the same direction twice clears it.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"entry_id": map[string]any{"type": "integer", "description": "Entry ID to mark."},
+				"value":    map[string]any{"type": "integer", "description": "+1, -1, or 0."},
+			},
+			"required": []string{"entry_id", "value"},
+		},
+	}, func(r *http.Request, store *storage.Storage, args json.RawMessage) (toolCallResult, error) {
+		var p struct {
+			EntryID int64 `json:"entry_id"`
+			Value   int   `json:"value"`
+		}
+		if err := decodeArgs(args, &p); err != nil {
+			return toolCallResult{}, err
+		}
+		if p.EntryID == 0 {
+			return toolCallResult{}, fmt.Errorf("%w: entry_id is required", errBadArgs)
+		}
+		if p.Value < -1 || p.Value > 1 {
+			return toolCallResult{}, fmt.Errorf("%w: value must be -1, 0 or +1", errBadArgs)
+		}
+		resulting, err := store.SetOllamaFeedback(request.UserID(r), p.EntryID, p.Value)
+		if err != nil {
+			return toolCallResult{}, err
+		}
+		return jsonResult(map[string]any{"feedback": resulting})
 	})
 
 	registerTool(tool{
