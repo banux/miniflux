@@ -126,6 +126,28 @@ func (h *handler) postChatMessage(w http.ResponseWriter, r *http.Request) {
 	response.HTMLRedirect(w, r, h.routePath("/chat/%d", convID))
 }
 
+func (h *handler) renameChatConversation(w http.ResponseWriter, r *http.Request) {
+	if !requireChatEnabled(w, r) {
+		response.JSONNotFound(w, r)
+		return
+	}
+	convID := request.RouteInt64Param(r, "conversationID")
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		response.HTMLRedirect(w, r, h.routePath("/chat/%d", convID))
+		return
+	}
+	const maxTitle = 200
+	if len([]rune(title)) > maxTitle {
+		title = string([]rune(title)[:maxTitle])
+	}
+	if err := h.store.RenameChatConversation(request.UserID(r), convID, title); err != nil {
+		response.HTMLServerError(w, r, err)
+		return
+	}
+	response.HTMLRedirect(w, r, h.routePath("/chat/%d", convID))
+}
+
 func (h *handler) deleteChatConversation(w http.ResponseWriter, r *http.Request) {
 	if !requireChatEnabled(w, r) {
 		response.JSONNotFound(w, r)

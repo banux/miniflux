@@ -10,6 +10,16 @@
             <a href="{{ routePath "/chat" }}">{{ t "page.chat.back" }}</a>
         </li>
         <li>
+            <details class="chat-rename">
+                <summary>{{ t "page.chat.rename" }}</summary>
+                <form method="post" action="{{ routePath "/chat/%d/rename" .conversation.ID }}">
+                    <input type="hidden" name="csrf" value="{{ .csrf }}">
+                    <input type="text" name="title" value="{{ .conversation.Title }}" maxlength="200" required>
+                    <button type="submit" class="button button-primary">{{ t "page.chat.rename.save" }}</button>
+                </form>
+            </details>
+        </li>
+        <li>
             <button
                 data-confirm="true"
                 data-url="{{ routePath "/chat/%d/delete" .conversation.ID }}"

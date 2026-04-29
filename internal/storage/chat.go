@@ -148,7 +148,7 @@ func (s *Storage) AppendChatMessage(m *model.ChatMessage) error {
 }
 
 // SetChatConversationTitle updates the title only when it is empty so the
-// auto-generated title never overrides one a (future) user-rename action set.
+// auto-generated title never overrides one a user-rename action set.
 func (s *Storage) SetChatConversationTitle(userID, id int64, title string) error {
 	if _, err := s.db.Exec(
 		`UPDATE chat_conversations
@@ -157,6 +157,21 @@ func (s *Storage) SetChatConversationTitle(userID, id int64, title string) error
 		title, id, userID,
 	); err != nil {
 		return fmt.Errorf(`store: unable to set chat conversation title: %v`, err)
+	}
+	return nil
+}
+
+// RenameChatConversation overrides the title regardless of whether one is
+// already set. Used by the explicit user rename action, in contrast with the
+// auto-generated title that lands via SetChatConversationTitle.
+func (s *Storage) RenameChatConversation(userID, id int64, title string) error {
+	if _, err := s.db.Exec(
+		`UPDATE chat_conversations
+		 SET title = $1, updated_at = now()
+		 WHERE id = $2 AND user_id = $3`,
+		title, id, userID,
+	); err != nil {
+		return fmt.Errorf(`store: unable to rename chat conversation: %v`, err)
 	}
 	return nil
 }

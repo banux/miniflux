@@ -65,6 +65,7 @@ func Serve(store *storage.Storage, pool *worker.Pool) http.Handler {
 	mux.HandleFunc("POST /chat", handler.createChatConversation)
 	mux.HandleFunc("GET /chat/{conversationID}", handler.showChatConversationPage)
 	mux.HandleFunc("POST /chat/{conversationID}/messages", handler.postChatMessage)
+	mux.HandleFunc("POST /chat/{conversationID}/rename", handler.renameChatConversation)
 	mux.HandleFunc("POST /chat/{conversationID}/delete", handler.deleteChatConversation)
 
 	// Search pages.
