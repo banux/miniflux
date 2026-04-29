@@ -210,7 +210,7 @@ func TestScoreEntryPromptBuildsProfileAndExcerpt(t *testing.T) {
 	}
 	user := captured.Messages[1].Content
 	for _, want := range []string{
-		"User profile",
+		"Positive examples",
 		"[starred] Distributed systems primer",
 		"[read] A boring CRUD post",
 		"Title: Cand",

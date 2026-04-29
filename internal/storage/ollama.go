@@ -112,29 +112,85 @@ func (s *Storage) CountUserRatedEntries(userID int64) (int, error) {
 // OllamaProfileSample is the compact representation of a past entry used to
 // build the user's preference profile sent to the Ollama scorer.
 type OllamaProfileSample struct {
-	Title   string
-	Tags    []string
-	Starred bool
-	Read    bool
+	Title    string
+	Tags     []string
+	Starred  bool
+	Read     bool
+	Feedback int // +1 = explicit thumbs up, -1 = explicit thumbs down, 0 = no signal
 }
 
 // GetOllamaUserProfile returns up to limit recent entries the user has reacted
-// to (starred or read), most recent first, projected to title + ollama_tags.
-// Tags fall back to the feed-provided tags when the entry has not been
-// enriched yet.
+// to, most recent first. Explicit feedback (+1 / -1) is sourced first because
+// it is the strongest signal we have; the remaining slots are filled with the
+// most recent starred / read entries. Tags fall back to feed-provided tags
+// when the entry has not been enriched yet.
 func (s *Storage) GetOllamaUserProfile(userID int64, limit int) ([]OllamaProfileSample, error) {
 	if limit <= 0 {
 		return nil, nil
+	}
+
+	// Reserve up to half the budget for explicit feedback (positive +
+	// negative). Whatever remains is filled with starred/read.
+	feedbackBudget := limit / 2
+	if feedbackBudget < 1 {
+		feedbackBudget = 1
+	}
+
+	feedbackSamples, err := s.fetchOllamaProfileBatch(userID, feedbackBudget, true)
+	if err != nil {
+		return nil, err
+	}
+	remaining := limit - len(feedbackSamples)
+	if remaining <= 0 {
+		return feedbackSamples, nil
+	}
+
+	rest, err := s.fetchOllamaProfileBatch(userID, remaining, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// De-dup by title — feedback rows take priority because they were fetched
+	// first and we copy them into the output before the rest.
+	seen := make(map[string]struct{}, len(feedbackSamples)+len(rest))
+	out := make([]OllamaProfileSample, 0, limit)
+	for _, s := range feedbackSamples {
+		if _, dup := seen[s.Title]; dup {
+			continue
+		}
+		seen[s.Title] = struct{}{}
+		out = append(out, s)
+	}
+	for _, s := range rest {
+		if len(out) >= limit {
+			break
+		}
+		if _, dup := seen[s.Title]; dup {
+			continue
+		}
+		seen[s.Title] = struct{}{}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// fetchOllamaProfileBatch loads one batch of profile rows. When
+// feedbackOnly is true, only entries with an explicit thumb count.
+func (s *Storage) fetchOllamaProfileBatch(userID int64, limit int, feedbackOnly bool) ([]OllamaProfileSample, error) {
+	condition := "(starred = true OR status = 'read')"
+	if feedbackOnly {
+		condition = "ollama_feedback <> 0"
 	}
 	query := `
 		SELECT
 			title,
 			COALESCE(NULLIF(ollama_tags, '{}'), tags) AS effective_tags,
 			starred,
-			status = 'read' AS is_read
+			status = 'read' AS is_read,
+			ollama_feedback
 		FROM entries
 		WHERE user_id = $1
-		  AND (starred = true OR status = 'read')
+		  AND ` + condition + `
 		ORDER BY changed_at DESC
 		LIMIT $2
 	`
@@ -147,7 +203,7 @@ func (s *Storage) GetOllamaUserProfile(userID int64, limit int) ([]OllamaProfile
 	samples := make([]OllamaProfileSample, 0, limit)
 	for rows.Next() {
 		var sample OllamaProfileSample
-		if err := rows.Scan(&sample.Title, pq.Array(&sample.Tags), &sample.Starred, &sample.Read); err != nil {
+		if err := rows.Scan(&sample.Title, pq.Array(&sample.Tags), &sample.Starred, &sample.Read, &sample.Feedback); err != nil {
 			return nil, fmt.Errorf(`store: unable to scan ollama profile sample: %v`, err)
 		}
 		samples = append(samples, sample)

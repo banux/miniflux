@@ -319,9 +319,10 @@ func loadProfile(store *storage.Storage, userID int64) []ProfileSample {
 	samples := make([]ProfileSample, 0, len(raw))
 	for _, r := range raw {
 		samples = append(samples, ProfileSample{
-			Title:   r.Title,
-			Tags:    r.Tags,
-			Starred: r.Starred,
+			Title:    r.Title,
+			Tags:     r.Tags,
+			Starred:  r.Starred,
+			Feedback: r.Feedback,
 		})
 	}
 
